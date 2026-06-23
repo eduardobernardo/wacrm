@@ -14,7 +14,7 @@ import type {
   CreateDealStepConfig,
   AssignConversationStepConfig,
 } from '@/types'
-import { supabaseAdmin } from './admin-client'
+import { supabaseAdmin } from '@/lib/supabase/admin-client'
 import { applyRouting } from '@/lib/departments/distribute'
 import type { RouteTarget } from '@/lib/departments/types'
 import { engineSendText, engineSendTemplate } from './meta-send'

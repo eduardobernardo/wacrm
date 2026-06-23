@@ -32,7 +32,7 @@
  *     INSERT raises 23505 and the runner catches & exits.
  */
 
-import { supabaseAdmin } from "./admin-client";
+import { supabaseAdmin } from "@/lib/supabase/admin-client";
 import { applyRouting } from "@/lib/departments/distribute";
 import type { RouteTarget } from "@/lib/departments/types";
 import {

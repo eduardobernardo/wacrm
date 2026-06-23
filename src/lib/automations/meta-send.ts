@@ -6,7 +6,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
-import { supabaseAdmin } from './admin-client'
+import { supabaseAdmin } from '@/lib/supabase/admin-client'
 
 // ------------------------------------------------------------
 // Automation-side Meta sender.

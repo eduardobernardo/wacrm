@@ -536,6 +536,7 @@ describe('DELETE /api/departments/[id]/members (remove member)', () => {
   it('returns 200 on success', async () => {
     const db = createMockDb(
       {
+        departments: { id: DEPT_ID },
         department_members: { error: null, count: 1 },
       },
       calls,

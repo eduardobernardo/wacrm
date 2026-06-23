@@ -7,7 +7,7 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { supabaseAdmin } from '@/lib/supabase/admin-client'
 import {
   sanitizePhoneForMeta,
   isValidE164,

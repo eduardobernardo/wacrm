@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { applyRouting } from "@/lib/departments/distribute";
 import type { RouteTarget } from "@/lib/departments/types";
-import { supabaseAdmin } from "@/lib/flows/admin-client";
+import { supabaseAdmin } from "@/lib/supabase/admin-client";
 
 export async function POST(
   request: Request,

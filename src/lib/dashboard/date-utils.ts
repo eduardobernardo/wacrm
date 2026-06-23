@@ -42,10 +42,10 @@ export function lastNDayKeys(n: number): string[] {
 
 /**
  * ISO day-of-week where 0 = Monday … 6 = Sunday. JavaScript's native
- * getDay() uses 0 = Sunday which is awkward for most business charts.
+ * getUTCDay() uses 0 = Sunday which is awkward for most business charts.
  */
 export function mondayIndex(d: Date): number {
-  const jsDow = d.getDay() // 0..6 with Sunday=0
+  const jsDow = d.getUTCDay() // 0..6 with Sunday=0
   return (jsDow + 6) % 7
 }
 
