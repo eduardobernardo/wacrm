@@ -61,7 +61,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [
   { label: null, group: 'top' },
   { label: 'Conta', group: 'account' },
-  { label: 'Workspace', group: 'workspace' },
+  { label: 'Área de trabalho', group: 'workspace' },
 ];
 
 function isSection(value: string | null): value is SettingsSection {

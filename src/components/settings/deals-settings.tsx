@@ -77,7 +77,7 @@ export function DealsSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-foreground">
             <Coins className="size-4 text-primary" />
-            Default currency
+            Moeda padrão
           </CardTitle>
           <CardDescription className="text-muted-foreground">
             Novos negócios usam esta moeda por padrão. Os totais do
