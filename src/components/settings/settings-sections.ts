@@ -1,6 +1,7 @@
 import {
   Building2,
   Coins,
+  CreditCard,
   FileText,
   LayoutGrid,
   Palette,
@@ -31,6 +32,7 @@ export const SETTINGS_SECTIONS = [
   'deals',
   'members',
   'departments',
+  'billing',
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -56,6 +58,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   deals: { id: 'deals', label: 'Negócios e moeda', icon: Coins, group: 'workspace' },
   members: { id: 'members', label: 'Membros da equipe', icon: UsersRound, group: 'workspace' },
   departments: { id: 'departments', label: 'Departamentos', icon: Building2, group: 'account' },
+  billing: { id: 'billing', label: 'Plano e cobrança', icon: CreditCard, group: 'account' },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [

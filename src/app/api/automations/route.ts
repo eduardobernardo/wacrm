@@ -7,6 +7,8 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { ForbiddenError } from '@/lib/auth/account'
+import { assertWithinLimit } from '@/lib/billing/subscription'
 
 export async function GET() {
   const supabase = await createClient()
@@ -44,6 +46,16 @@ export async function POST(request: Request) {
       { error: 'Your profile is not linked to an account.' },
       { status: 403 },
     )
+  }
+
+  // Plan limit: number of automations per account.
+  try {
+    await assertWithinLimit(supabase, accountId, 'automations')
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    throw err
   }
 
   const body = await request.json().catch(() => null)

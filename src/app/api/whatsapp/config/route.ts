@@ -7,6 +7,8 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { ForbiddenError } from '@/lib/auth/account'
+import { assertWhatsappEntitled } from '@/lib/billing/subscription'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -182,6 +184,20 @@ export async function POST(request: Request) {
         { error: 'Your profile is not linked to an account.' },
         { status: 403 },
       )
+    }
+
+    // Paywall: connecting WhatsApp requires a paid plan (free has
+    // maxWhatsappNumbers === 0). This is the primary free→paid gate of
+    // the SaaS. Entitlement-only, so reconnecting/updating an existing
+    // number stays allowed; the one-number-per-account rule is the DB
+    // UNIQUE(account_id) constraint. Checked before any Meta API call.
+    try {
+      await assertWhatsappEntitled(supabase, accountId)
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return NextResponse.json({ error: err.message }, { status: err.status })
+      }
+      throw err
     }
 
     const body = await request.json()

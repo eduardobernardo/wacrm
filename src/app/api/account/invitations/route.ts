@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { assertWithinLimit } from "@/lib/billing/subscription";
 import {
   clampExpiryDays,
   generateInviteToken,
@@ -177,6 +178,11 @@ export async function POST(request: Request) {
       RATE_LIMITS.adminAction,
     );
     if (!limit.success) return rateLimitResponse(limit);
+
+    // Plan limit: seats = plan base + purchased extra_seats. Counts
+    // current members; blocks creating new invites once the account
+    // is at its seat cap. Throws ForbiddenError → 403 via the catch.
+    await assertWithinLimit(ctx.supabase, ctx.accountId, "members");
 
     const body = (await request.json().catch(() => null)) as
       | { role?: unknown; expiresInDays?: unknown; label?: unknown }

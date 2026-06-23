@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getFlowTemplate } from '@/lib/flows/templates'
+import { ForbiddenError } from '@/lib/auth/account'
+import { assertWithinLimit } from '@/lib/billing/subscription'
 
 /**
  * GET /api/flows — list the caller's flows.
@@ -65,6 +67,16 @@ export async function POST(request: Request) {
       { error: 'Your profile is not linked to an account.' },
       { status: 403 },
     )
+  }
+
+  // Plan limit: number of flows per account.
+  try {
+    await assertWithinLimit(supabase, accountId, 'flows')
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    throw err
   }
 
   const body = (await request.json().catch(() => null)) as
