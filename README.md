@@ -45,6 +45,10 @@ clone or fork it to run your own CRM.
   Transfer conversations manually in the inbox, route via automations
   or flow handoff nodes, and direct broadcast replies to the right team.
 - **Account management** — email, password, avatar, global sign-out.
+- **Planos e cobrança (SaaS)** — três planos (Gratuito, Pro R$99, Business R$249).
+  Stripe Checkout para assinar, Customer Portal para auto-gestão. Limites por plano
+  com enforcement no servidor; WhatsApp exige Pro ou superior. Pronto para
+  multi-número e seats avulsos como add-ons futuros.
 
 ## Why fork this?
 
@@ -142,6 +146,97 @@ Key pages:
 - [Deploy on Hostinger](https://wacrm.tech/docs/deployment-hostinger)
 - [Architecture](https://wacrm.tech/docs/architecture)
 - [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
+
+## ☁️ Billing (Stripe) — modo SaaS
+
+wacrm inclui uma camada de planos e cobrança via Stripe. Contas novas
+começam no plano **Gratuito** (não conecta WhatsApp). Para liberar o
+produto, o usuário assina **Pro** (R$99/mês) ou **Business** (R$249/mês).
+
+Quem faz self-host **sem cobrar** pode ignorar esta seção: basta editar
+os limites do plano `free` em `src/lib/billing/plans.ts` para liberar
+todos os recursos sem precisar de Stripe.
+
+### Planos
+
+| | Gratuito | Pro | Business |
+|---|---|---|---|
+| **Preço** | R$ 0 | R$ 99/mês | R$ 249/mês |
+| **WhatsApp** | ❌ | 1 número | 1 número |
+| **Membros (base)** | 1 | 5 | 20 |
+| **Contatos** | 0 | 10.000 | Ilimitado |
+| **Transmissões/mês** | 0 | 20 | Ilimitado |
+| **Automações** | 0 | 10 | Ilimitado |
+| **Fluxos** | 0 | 10 | Ilimitado |
+
+### Configurar o Stripe
+
+**1. Crie os produtos no Stripe Dashboard**
+
+Acesse [Stripe → Produtos](https://dashboard.stripe.com/products) e crie
+dois produtos recorrentes mensais (Pro R$99, Business R$249). Anote os
+**Price IDs** (ex.: `price_abc123`).
+
+**2. Configure as variáveis de ambiente**
+
+```bash
+STRIPE_SECRET_KEY=sk_live_xxx        # Chave secreta (API keys)
+STRIPE_WEBHOOK_SECRET=whsec_xxx     # Segredo do webhook
+STRIPE_PRICE_PRO=price_abc123       # Price ID do Pro
+STRIPE_PRICE_BUSINESS=price_def456  # Price ID do Business
+```
+
+**3. Aplique a migration**
+
+```bash
+supabase db push   # ou cole 030_billing.sql no SQL Editor
+```
+
+A migration é idempotente. Contas existentes recebem `plan='free'`.
+
+**4. Configure o webhook**
+
+No [Stripe Dashboard → Webhooks](https://dashboard.stripe.com/webhooks),
+crie um endpoint para `https://seu-dominio.com/api/billing/webhook`
+com os eventos:
+
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+
+Copie o **Signing secret** para `STRIPE_WEBHOOK_SECRET`.
+
+> Para testes locais, use `stripe listen --forward-to localhost:3000/api/billing/webhook`
+> e chaves de teste (`sk_test_xxx`). O cartão `4242 4242 4242 4242` simula
+> pagamento aprovado.
+
+**5. Ative o Customer Portal**
+
+Em [Stripe → Customer Portal](https://dashboard.stripe.com/settings/billing/portal),
+ative o portal e configure os produtos Pro e Business como gerenciáveis.
+URL de retorno: `https://seu-dominio.com/settings?tab=billing`.
+
+**6. Verifique**
+
+1. Crie um usuário novo → `SELECT * FROM subscriptions` deve mostrar `plan='free'`.
+2. Configurações → WhatsApp → tentar conectar → **bloqueado** (requer upgrade).
+3. Configurações → Plano e cobrança → Assinar Pro → completar checkout.
+4. Após pagamento (webhook), WhatsApp é liberado.
+5. Customer Portal → cancelar → ao fim do período volta a `free`.
+
+### Arquitetura de billing
+
+- **Fonte da verdade:** o webhook do Stripe (`POST /api/billing/webhook`) é o
+  único escritor da tabela `subscriptions` (usa service-role, bypassa RLS).
+  Membros só leem — não há write policy para usuários.
+- **Paywall:** conectar WhatsApp é o gate principal. `free` tem
+  `maxWhatsappNumbers: 0` e a rota `POST /api/whatsapp/config` bloqueia antes
+  de qualquer chamada à Meta.
+- **Limites:** definidos em TypeScript (`src/lib/billing/plans.ts`), não no
+  banco — ajuste sem nova migration.
+- **Seats extras e múltiplos números:** colunas e helpers já existem para
+  evoluções futuras. Detalhes em [`plans/saas-billing-follow-up.md`](plans/saas-billing-follow-up.md).
 
 ## Stack
 
