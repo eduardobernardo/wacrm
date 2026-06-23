@@ -378,8 +378,8 @@ export function WhatsAppConfig() {
   return (
     <section className="animate-in fade-in-50 duration-200">
       <SettingsPanelHead
-        title="WhatsApp connection"
-        description="Connect your Meta WhatsApp Business API. Credentials, webhook, and setup steps all live here."
+        title="Conexão WhatsApp"
+        description="Conecte sua API do Meta WhatsApp Business. Credenciais, webhook e instruções de configuração ficam aqui."
       />
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
