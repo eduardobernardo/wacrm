@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import { MessageTemplate } from '@/types';
 import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-template';
@@ -22,7 +20,6 @@ const steps = [
 
 export default function NewBroadcastPage() {
   const router = useRouter();
-  const { accountId } = useAuth();
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
@@ -85,43 +82,28 @@ export default function NewBroadcastPage() {
       toast.error('Dê um nome ao disparo antes de salvar o rascunho.');
       return;
     }
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) {
-      toast.error('Não autenticado.');
-      return;
-    }
-    if (!accountId) {
-      toast.error('Seu perfil não está vinculado a uma conta.');
-      return;
-    }
 
-    const { error } = await supabase.from('broadcasts').insert({
-      user_id: user.id,
-      account_id: accountId,
-      name: name.trim(),
-      template_name: template.name,
-      template_language: template.language ?? 'en_US',
-      template_variables: variables,
-      audience_filter: {
-        type: audience.type,
-        tagIds: audience.tagIds,
-      },
-      reply_routing: replyRouting ?? null,
-      status: 'draft',
-      total_recipients: 0,
-      sent_count: 0,
-      delivered_count: 0,
-      read_count: 0,
-      replied_count: 0,
-      failed_count: 0,
+    const res = await fetch('/api/broadcasts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name.trim(),
+        template_name: template.name,
+        template_language: template.language ?? 'en_US',
+        template_variables: variables,
+        audience_filter: {
+          type: audience.type,
+          tagIds: audience.tagIds,
+        },
+        reply_routing: replyRouting ?? null,
+        status: 'draft',
+        total_recipients: 0,
+      }),
     });
 
-    if (error) {
-      toast.error(`Falha ao salvar rascunho: ${error.message}`);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(`Falha ao salvar rascunho: ${data.error ?? 'Erro desconhecido'}`);
       return;
     }
     toast.success('Rascunho salvo');

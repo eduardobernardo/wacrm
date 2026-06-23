@@ -97,6 +97,17 @@ async function syncSubscription(sub: Stripe.Subscription, accountIdOverride?: st
 
   const priceId = sub.items.data[0]?.price?.id;
   const tier = tierFromPriceId(priceId) ?? "free";
+
+  // Safety: if we received a price ID we don't recognize, don't silently
+  // downgrade to "free" — it's likely a misconfigured env var.
+  if (priceId && tier === "free") {
+    console.error(
+      `[billing/webhook] Unrecognized price ${priceId} for sub ${sub.id}. ` +
+      `Check STRIPE_PRICE_PRO / STRIPE_PRICE_BUSINESS env vars. Skipping update.`,
+    );
+    return;
+  }
+
   const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
 
   await billingAdmin()

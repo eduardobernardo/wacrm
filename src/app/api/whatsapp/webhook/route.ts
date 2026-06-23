@@ -13,6 +13,8 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import { getSubscription, effectiveTier } from '@/lib/billing/subscription'
+import { getPlanLimits, isUnlimited } from '@/lib/billing/plans'
 
 interface WhatsAppMessage {
   id: string
@@ -913,6 +915,24 @@ async function findOrCreateContact(
   // user_id is the NOT NULL FK audit column (no inbound message
   // has a single "user who created" it — we attribute to the
   // WhatsApp config owner as a stable default).
+
+  // Plan limit: number of contacts per account.
+  const sub = await getSubscription(supabaseAdmin(), accountId)
+  const limit = getPlanLimits(effectiveTier(sub)).maxContacts
+  if (!isUnlimited(limit)) {
+    const { count, error: limitErr } = await supabaseAdmin()
+      .from('contacts')
+      .select('*', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+    if (limitErr) {
+      console.error('[webhook] contacts count error:', limitErr)
+      if (limit === 0) return null // fail closed for hard paywall
+    } else if ((count ?? 0) >= limit) {
+      console.warn(`[webhook] account ${accountId} reached contacts limit (${limit})`)
+      return null
+    }
+  }
+
   const { data: newContact, error: createError } = await supabaseAdmin()
     .from('contacts')
     .insert({

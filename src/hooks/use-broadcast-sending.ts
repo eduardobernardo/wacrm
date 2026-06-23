@@ -345,13 +345,12 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         throw new Error('No contacts found for this audience.');
       }
 
-      // ── Step 2: Create broadcast row ──────────────────────────────
+      // ── Step 2: Create broadcast row via API (enforces billing limits) ─
       setProgress(10);
-      const { data: broadcast, error: broadcastError } = await supabase
-        .from('broadcasts')
-        .insert({
-          user_id: user.id,
-          account_id: accountId,
+      const res = await fetch('/api/broadcasts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           name: payload.name,
           template_name: payload.template.name,
           template_language: payload.template.language ?? 'en_US',
@@ -365,19 +364,17 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           reply_routing: payload.replyRouting ?? null,
           status: 'sending',
           total_recipients: contacts.length,
-          sent_count: 0,
-          delivered_count: 0,
-          read_count: 0,
-          replied_count: 0,
-          failed_count: 0,
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (broadcastError || !broadcast) {
-        throw new Error(
-          `Failed to create broadcast: ${broadcastError?.message ?? 'unknown error'}`,
-        );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Failed to create broadcast');
+      }
+
+      const { broadcast } = await res.json();
+      if (!broadcast?.id) {
+        throw new Error('Failed to create broadcast: no id returned');
       }
 
       // ── Step 3: Insert recipient rows ─────────────────────────────
