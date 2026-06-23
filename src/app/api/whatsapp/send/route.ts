@@ -6,6 +6,7 @@ import {
   sendMediaMessage,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
+import { resolveAccountId } from '@/lib/auth/account'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { supabaseAdmin } from '@/lib/supabase/admin-client'
 import {
@@ -49,12 +50,7 @@ export async function POST(request: Request) {
     // (conversation, whatsapp_config, message_templates) is account-
     // scoped post-multi-user, so the previous `user_id` filters
     // returned nothing for teammates who didn't author the row.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
+    const accountId = await resolveAccountId(supabase, user.id)
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
@@ -165,11 +161,12 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch and decrypt WhatsApp config
+    // Fetch and decrypt WhatsApp config — resolve via the conversation's
+    // number so multi-number accounts always send from the right config.
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('account_id', accountId)
+      .eq('id', conversation.whatsapp_config_id)
       .single()
 
     if (configError || !config) {

@@ -5,14 +5,14 @@ import {
   getSubscribedApps,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
+import { resolveAccountId } from '@/lib/auth/account'
 
 /**
  * GET /api/whatsapp/config/verify-registration
  *
- * Diagnostic endpoint — confirms the user's saved phone number is
- * actually reachable on Meta's side. Solves the failure mode that
- * surfaced the multi-number bug originally: "UI says Connected but
- * Meta isn't delivering events."
+ * Diagnostic endpoint — confirms a specific saved phone number is
+ * actually reachable on Meta's side. Requires `?config_id=X` query
+ * param to identify which config to verify (multi-number support).
  *
  * Three checks run independently so the UI can show which step
  * passes and which fails:
@@ -28,7 +28,7 @@ import {
  * rather than a generic error toast. The combined `live` flag is
  * what the UI badges on.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -38,15 +38,8 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // whatsapp_config is one-row-per-account post-017. Resolve the
-  // caller's account_id so a teammate who joined an existing account
-  // sees the same registration state as the admin who set it up.
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', user.id)
-    .maybeSingle()
-  const accountId = profile?.account_id as string | undefined
+  // Resolve the caller's account_id
+  const accountId = await resolveAccountId(supabase, user.id)
   if (!accountId) {
     return NextResponse.json({
       live: false,
@@ -55,18 +48,37 @@ export async function GET() {
     })
   }
 
+  // Require ?config_id=X to identify which number to verify
+  const url = new URL(request.url)
+  const configId = url.searchParams.get('config_id')
+  if (!configId) {
+    return NextResponse.json(
+      { error: 'config_id query param is required' },
+      { status: 400 },
+    )
+  }
+
+  // Look up the specific config by id, then verify ownership
   const { data: config } = await supabase
     .from('whatsapp_config')
     .select('*')
-    .eq('account_id', accountId)
+    .eq('id', configId)
     .maybeSingle()
 
   if (!config) {
     return NextResponse.json({
       live: false,
       checks: { config_exists: false },
-      message: 'No WhatsApp configuration saved yet.',
+      message: 'No WhatsApp configuration found with that ID.',
     })
+  }
+
+  // Verify the config belongs to the caller's account
+  if (config.account_id !== accountId) {
+    return NextResponse.json(
+      { error: 'This configuration does not belong to your account.' },
+      { status: 403 },
+    )
   }
 
   let accessToken: string

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
+import { resolveAccountId } from '@/lib/auth/account';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import {
@@ -38,12 +39,7 @@ export async function POST(request: Request) {
 
     // Resolve the caller's account_id so conversation + whatsapp_config
     // lookups work for teammates who didn't author the rows directly.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
-    const accountId = profile?.account_id as string | undefined;
+    const accountId = await resolveAccountId(supabase, user.id)
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
@@ -86,7 +82,7 @@ export async function POST(request: Request) {
 
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, account_id, contact:contacts(phone)')
+      .select('id, account_id, whatsapp_config_id, contact:contacts(phone)')
       .eq('id', targetMessage.conversation_id)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -108,11 +104,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token. Account-scoped post-multi-user.
+    // WhatsApp config + access token. Resolve via the conversation's
+    // number so multi-number accounts always send from the right config.
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('phone_number_id, access_token')
-      .eq('account_id', accountId)
+      .eq('id', conversation.whatsapp_config_id)
       .single();
 
     if (configError || !config) {

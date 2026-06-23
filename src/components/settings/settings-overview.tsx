@@ -26,8 +26,8 @@ interface OverviewCounts {
 }
 
 interface WhatsAppStatus {
-  configured: boolean;
-  connected: boolean;
+  totalCount: number;
+  connectedCount: number;
 }
 
 export function SettingsOverview({
@@ -113,21 +113,18 @@ export function SettingsOverview({
       setCountsLoading(false);
     })();
 
-    // WhatsApp connection status — slower, independent.
+    // WhatsApp connection status — local DB only (no Meta probe).
     (async () => {
       setWhatsappLoading(true);
-      const [row, health] = await Promise.allSettled([
-        supabase
-          .from('whatsapp_config')
-          .select('phone_number_id')
-          .eq('account_id', acctId)
-          .maybeSingle(),
-        fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
-      ]);
+      const { data: configs } = await supabase
+        .from('whatsapp_config')
+        .select('id, status')
+        .eq('account_id', acctId);
       if (cancelled) return;
+      const allConfigs = configs ?? [];
       setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
-        connected: health.status === 'fulfilled' && !!health.value?.connected,
+        totalCount: allConfigs.length,
+        connectedCount: allConfigs.filter((c) => c.status === 'connected').length,
       });
       setWhatsappLoading(false);
     })();
@@ -157,17 +154,22 @@ export function SettingsOverview({
     {
       section: 'whatsapp',
       loading: whatsappLoading,
-      subtitle: !whatsapp?.configured ? (
-        'Não configurado ainda'
-      ) : whatsapp.connected ? (
-        <>
-          <StatusDot tone="ok" /> Conectado
-        </>
-      ) : (
-        <>
-          <StatusDot tone="muted" /> Precisa reconectar
-        </>
-      ),
+      subtitle:
+        whatsappLoading || !whatsapp ? null : whatsapp.totalCount === 0 ? (
+          'Não configurado ainda'
+        ) : whatsapp.connectedCount === whatsapp.totalCount ? (
+          <>
+            <StatusDot tone="ok" />{' '}
+            Todos os {whatsapp.totalCount} número{whatsapp.totalCount === 1 ? '' : 's'} conectado
+            {whatsapp.totalCount === 1 ? '' : 's'}
+          </>
+        ) : (
+          <>
+            <StatusDot tone="muted" /> {whatsapp.connectedCount} de{' '}
+            {whatsapp.totalCount} número{whatsapp.totalCount === 1 ? '' : 's'} conectado
+            {whatsapp.connectedCount === 1 ? '' : 's'}
+          </>
+        ),
     },
     {
       section: 'members',

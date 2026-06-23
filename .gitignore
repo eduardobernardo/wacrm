@@ -36,9 +36,13 @@ yarn-error.log*
 !.env.local.example
 !.env.example
 
+# supabase temp/tooling files
+supabase/.temp/
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.slim/deepwork/

@@ -181,6 +181,7 @@ export interface Conversation {
   id: string;
   user_id: string;
   contact_id: string;
+  whatsapp_config_id: string;
   status: ConversationStatus;
   assigned_agent_id?: string;
   department_id?: string;
@@ -246,6 +247,7 @@ export interface WhatsAppConfig {
   user_id: string;
   phone_number_id: string;
   waba_id?: string;
+  label?: string;
   access_token: string;
   verify_token?: string;
   status: 'connected' | 'disconnected';
@@ -307,6 +309,7 @@ export interface MessageTemplate {
   quality_score?: 'GREEN' | 'YELLOW' | 'RED';
   submission_error?: string;
   last_submitted_at?: string;
+  waba_id?: string;
   created_at: string;
 }
 
@@ -373,6 +376,7 @@ export interface Broadcast {
   read_count: number;
   replied_count: number;
   failed_count: number;
+  whatsapp_config_id?: string;
   created_at: string;
 }
 
@@ -548,6 +552,7 @@ export interface Automation {
   is_active: boolean;
   execution_count: number;
   last_executed_at?: string | null;
+  whatsapp_config_id?: string;
   created_at: string;
   updated_at: string;
 }

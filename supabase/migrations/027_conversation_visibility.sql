@@ -101,6 +101,9 @@ END $$;
 -- sole gate for reads.
 -- ============================================================
 DROP POLICY IF EXISTS messages_modify ON messages;
+DROP POLICY IF EXISTS messages_insert ON messages;
+DROP POLICY IF EXISTS messages_update ON messages;
+DROP POLICY IF EXISTS messages_delete ON messages;
 CREATE POLICY messages_insert ON messages FOR INSERT WITH CHECK (
   EXISTS (SELECT 1 FROM conversations c
     WHERE c.id = messages.conversation_id

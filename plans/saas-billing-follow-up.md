@@ -44,7 +44,7 @@ O MVP de billing foi implementado na branch `feat/billing`:
 
 **Princípio norteador:** contas com 1 número (Pro, e Business até adicionarem o 2º) não devem perceber mudança na UX. O recurso multi-número aparece organicamente quando relevante. Display e enforcement ficam sempre em sincronia.
 
-#### 1.2.1 Modelo de dados — migration `031_multi_whatsapp.sql`
+#### 1.2.1 Modelo de dados — migration `035_multi_whatsapp.sql`
 
 **Ordem das operações (crítica — o backfill roda antes de dropar o `UNIQUE(account_id)` para garantir join 1:1):**
 
@@ -272,7 +272,7 @@ Ao soft-deletear um número, a UI avisa:
 #### 1.2.14 Arquivos a tocar (estimativa ~G+)
 
 **Migration:**
-- `supabase/migrations/031_multi_whatsapp.sql` — ver 1.2.1.
+- `supabase/migrations/035_multi_whatsapp.sql` — ver 1.2.1.
 
 **Schema-adjacent (colunas nullable em tabelas proativas):**
 - Adicionar `whatsapp_config_id UUID REFERENCES whatsapp_config(id) ON DELETE SET NULL` em `automations`, `flows`, `broadcasts` (nullable, backfill NULL — fallback "único se houver só um").

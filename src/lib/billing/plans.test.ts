@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PLANS,
   PLAN_TIERS,
@@ -58,5 +58,43 @@ describe("formatLimit", () => {
     expect(formatLimit(UNLIMITED)).toBe("Ilimitado");
     expect(formatLimit(10)).toBe("10");
     expect(formatLimit(0)).toBe("0");
+  });
+});
+
+describe("env var overrides for maxWhatsappNumbers", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    // Clear env vars so each test runs against a clean, deterministic state.
+    vi.stubEnv("NEXT_PUBLIC_PRO_MAX_WHATSAPP_NUMBERS", "");
+    vi.stubEnv("NEXT_PUBLIC_BUSINESS_MAX_WHATSAPP_NUMBERS", "");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("Business defaults to 3 maxWhatsappNumbers", async () => {
+    const { getPlanLimits } = await import("./plans");
+    expect(getPlanLimits("business").maxWhatsappNumbers).toBe(3);
+  });
+
+  it("Pro defaults to 1 maxWhatsappNumbers", async () => {
+    const { getPlanLimits } = await import("./plans");
+    expect(getPlanLimits("pro").maxWhatsappNumbers).toBe(1);
+  });
+
+  it("Free has 0 maxWhatsappNumbers", async () => {
+    const { getPlanLimits } = await import("./plans");
+    expect(getPlanLimits("free").maxWhatsappNumbers).toBe(0);
+  });
+
+  it("Business maxWhatsappNumbers > 0 (paid tier)", async () => {
+    const { isPaidTier } = await import("./plans");
+    expect(isPaidTier("business")).toBe(true);
+  });
+
+  it("Free is not a paid tier", async () => {
+    const { isPaidTier } = await import("./plans");
+    expect(isPaidTier("free")).toBe(false);
   });
 });

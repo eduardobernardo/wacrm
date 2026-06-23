@@ -174,41 +174,25 @@ async function resolveSequential(
     return { userId: memberIds[0], departmentId };
   }
 
-  // Read current cursor
-  const { data: dept } = await db
-    .from('departments')
-    .select('last_assigned_user_id')
-    .eq('id', departmentId)
-    .eq('account_id', accountId)
-    .single();
+  // Atomic round-robin: lock the department row, read cursor,
+  // compute next member, update cursor — all in a single RPC.
+  const { data: nextUserId, error: rpcErr } = await db.rpc(
+    'atomic_round_robin',
+    {
+      p_department_id: departmentId,
+      p_account_id: accountId,
+      p_member_ids: orderedIds,
+    },
+  );
 
-  const cursor = (dept as { last_assigned_user_id: string | null } | null)
-    ?.last_assigned_user_id;
-
-  // Find position of cursor in the ordered list
-  let idx = -1;
-  if (cursor) {
-    idx = orderedIds.indexOf(cursor);
+  if (rpcErr) throw rpcErr;
+  if (!nextUserId) {
+    throw new Error(
+      `atomic_round_robin returned null for department ${departmentId}`,
+    );
   }
 
-  // Advance to next (wrap around)
-  const nextIdx = (idx + 1) % orderedIds.length;
-  const nextUserId = orderedIds[nextIdx];
-
-  // Update cursor.
-  // NOTE: This read-then-write across two round trips is NOT atomic.
-  // Two concurrent callers can both read the same cursor and assign
-  // the same member.  For production, replace with a single UPDATE …
-  // RETURNING via an RPC that locks the department row.
-  const { error: updateErr } = await db
-    .from('departments')
-    .update({ last_assigned_user_id: nextUserId })
-    .eq('id', departmentId)
-    .eq('account_id', accountId);
-
-  if (updateErr) throw updateErr;
-
-  return { userId: nextUserId, departmentId };
+  return { userId: nextUserId as string, departmentId };
 }
 
 // ---------------------------------------------------------------------------

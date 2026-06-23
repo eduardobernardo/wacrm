@@ -36,6 +36,7 @@ interface ConversationListProps {
   filterDepartmentId?: string | null;
   filterAssignedAgentId?: string | null;
   filterUnassigned?: boolean;
+  filterWhatsappConfigId?: string | null;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -63,6 +64,7 @@ export function ConversationList({
   filterDepartmentId,
   filterAssignedAgentId,
   filterUnassigned,
+  filterWhatsappConfigId,
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
@@ -102,6 +104,11 @@ export function ConversationList({
         query = query.is("assigned_agent_id", null);
       } else if (filterAssignedAgentId) {
         query = query.eq("assigned_agent_id", filterAssignedAgentId);
+      }
+
+      // Multi-number filter: narrow to a specific WhatsApp number.
+      if (filterWhatsappConfigId) {
+        query = query.eq("whatsapp_config_id", filterWhatsappConfigId);
       }
 
       const { data, error } = await query;
@@ -168,7 +175,7 @@ export function ConversationList({
     // the realtime channel reconnects or the tab regains focus — catches
     // up on any events sent while the WS was disconnected or throttled.
     // Filter deps are included so changing the filter triggers a refetch.
-  }, [resyncToken, filterDepartmentId, filterAssignedAgentId, filterUnassigned]);
+  }, [resyncToken, filterDepartmentId, filterAssignedAgentId, filterUnassigned, filterWhatsappConfigId]);
 
   const filtered = useMemo(() => {
     let result = conversations;

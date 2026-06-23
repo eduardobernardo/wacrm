@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { resolveAccountId } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   deleteMessageTemplate,
@@ -67,12 +68,7 @@ export async function PATCH(
 
     // Resolve the caller's account_id so template + whatsapp_config
     // lookups work for teammates who didn't author the row.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
+    const accountId = await resolveAccountId(supabase, user.id)
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
@@ -91,7 +87,7 @@ export async function PATCH(
     // meta_template_id and status — fetch explicitly.
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, status, meta_template_id, language')
+      .select('id, name, status, meta_template_id, language, waba_id')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -138,14 +134,21 @@ export async function PATCH(
     }
 
     if (!isDryRun()) {
+      // Resolve the config that owns this template's WABA.
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', accountId)
+        .eq('waba_id', existing.waba_id)
+        .eq('status', 'connected')
+        .limit(1)
         .single()
       if (configError || !config) {
         return NextResponse.json(
-          { error: 'WhatsApp not configured.' },
+          {
+            error:
+              'No connected WhatsApp number found for this template\'s WABA.',
+          },
           { status: 400 },
         )
       }
@@ -254,12 +257,7 @@ export async function DELETE(
     // Same account-scoping rationale as the PATCH handler above —
     // teammates need to be able to operate on shared templates +
     // the shared whatsapp_config.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
+    const accountId = await resolveAccountId(supabase, user.id)
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
@@ -269,7 +267,7 @@ export async function DELETE(
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, meta_template_id')
+      .select('id, name, meta_template_id, waba_id')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -282,10 +280,16 @@ export async function DELETE(
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', accountId)
+        .eq('waba_id', existing.waba_id)
+        .eq('status', 'connected')
+        .limit(1)
         .single()
       if (configError || !config || !config.waba_id) {
         return NextResponse.json(
-          { error: 'WhatsApp not configured — cannot delete on Meta.' },
+          {
+            error:
+              'No connected WhatsApp number found for this template\'s WABA — cannot delete on Meta.',
+          },
           { status: 400 },
         )
       }

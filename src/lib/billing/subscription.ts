@@ -71,6 +71,10 @@ export async function getSubscription(
 
   if (error) {
     console.error("[getSubscription] fetch error:", error);
+    // A real DB/PostgREST error (timeout, pool exhausted, etc.) must not
+    // be silently swallowed into a synthetic `free` row — that would
+    // temporarily downgrade paying users on transient failures.
+    throw error;
   }
 
   if (!data) {
@@ -212,6 +216,9 @@ export async function assertWhatsappEntitled(
  * Throw `ForbiddenError` unless the account may connect *another*
  * WhatsApp number — entitlement plus the per-plan numeric cap.
  *
+ * Only connected numbers count toward the cap: soft-deleted or
+ * disconnected numbers do not consume a slot.
+ *
  * NOT used today: the current product allows one number per account,
  * already enforced by `whatsapp_config UNIQUE(account_id)`, and the
  * save route updates in place. This helper is the call site for the
@@ -233,7 +240,8 @@ export async function assertCanConnectWhatsapp(
   const { count, error } = await supabase
     .from("whatsapp_config")
     .select("*", { count: "exact", head: true })
-    .eq("account_id", accountId);
+    .eq("account_id", accountId)
+    .eq("status", "connected");
 
   // If we can't count, don't block reconnecting an existing number.
   if (error) {
@@ -279,6 +287,19 @@ export async function enforceWhatsappEntitled(
 ): Promise<NextResponse | null> {
   try {
     await assertWhatsappEntitled(supabase, accountId);
+    return null;
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+/** Same pattern for the WhatsApp "can connect another number" gate. */
+export async function enforceCanConnectWhatsapp(
+  supabase: SupabaseClient,
+  accountId: string,
+): Promise<NextResponse | null> {
+  try {
+    await assertCanConnectWhatsapp(supabase, accountId);
     return null;
   } catch (err) {
     return toErrorResponse(err);

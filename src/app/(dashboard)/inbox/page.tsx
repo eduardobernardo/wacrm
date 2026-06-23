@@ -4,6 +4,12 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation, Message, Contact, ConversationStatus, Department } from "@/types";
+
+interface WhatsappConfig {
+  id: string;
+  label: string | null;
+  phone_number_id: string;
+}
 import { useRealtime } from "@/hooks/use-realtime";
 import { useAuth } from "@/hooks/use-auth";
 import { ConversationList } from "@/components/inbox/conversation-list";
@@ -29,7 +35,7 @@ const CONTACT_PANEL_STORAGE_KEY = "wacrm:inbox:contact-panel-open";
 export default function InboxPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, canManageMembers } = useAuth();
+  const { user, canManageMembers, accountId } = useAuth();
   /**
    * `?c=<id>` deep-link support. Used when landing here from the
    * dashboard's recent-conversations list so the right thread opens
@@ -57,6 +63,10 @@ export default function InboxPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const showDeptFilter = canManageMembers; // admin+ only
 
+  // WhatsApp multi-number filter (only shown if >1 connected number).
+  const [whatsappConfigs, setWhatsappConfigs] = useState<WhatsappConfig[]>([]);
+  const [selectedNumberId, setSelectedNumberId] = useState<string | null>(null);
+
   // Fetch departments once on mount (for the filter dropdown).
   useEffect(() => {
     if (!showDeptFilter) return;
@@ -78,6 +88,27 @@ export default function InboxPage() {
       cancelled = true;
     };
   }, [showDeptFilter]);
+
+  // Fetch connected WhatsApp configs for the number selector (only if >1).
+  useEffect(() => {
+    if (!accountId) return;
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("whatsapp_config")
+        .select("id, label, phone_number_id")
+        .eq("account_id", accountId)
+        .eq("status", "connected")
+        .order("label", { nullsFirst: false })
+        .order("phone_number_id");
+      if (cancelled) return;
+      setWhatsappConfigs((data as WhatsappConfig[] | null) ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
 
   // Derived filter values for ConversationList props.
   const filterDepartmentId = useMemo(
@@ -212,43 +243,24 @@ export default function InboxPage() {
 
   // Check WhatsApp connection status on mount
   useEffect(() => {
+    if (!accountId) return;
+
     const checkConnection = async () => {
       const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-
-      if (!user) return;
-
-      // whatsapp_config is one-row-per-account post-multi-user, so
-      // the previous `.eq('user_id', user.id)` would miss the row
-      // for any teammate who didn't personally save the config —
-      // the "WhatsApp not connected" banner would show in the
-      // shared inbox even though the admin had it configured.
-      // Resolve account_id via the profile and query by that.
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("account_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const accountId = profile?.account_id as string | undefined;
-      if (!accountId) {
-        setWhatsappConnected(false);
-        return;
-      }
 
       const { data } = await supabase
         .from("whatsapp_config")
         .select("status")
         .eq("account_id", accountId)
+        .eq("status", "connected")
+        .limit(1)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");
     };
 
     checkConnection();
-  }, []);
+  }, [accountId]);
 
   // Handle realtime message events
   const handleMessageEvent = useCallback(
@@ -322,6 +334,14 @@ export default function InboxPage() {
     }) => {
       const conv = event.new;
 
+      // Filter by number — conversations without a matching whatsapp_config_id
+      // are excluded. The migration (035) enforces NOT NULL on this column,
+      // so post-migration every conversation has a number. This filter is
+      // correct: selecting "Vendas" should only show Vendas conversations.
+      if (selectedNumberId && conv.whatsapp_config_id !== selectedNumberId) {
+        return;
+      }
+
       if (event.eventType === "INSERT") {
         // Prepend immediately for snappy UX so the new conv shows in the
         // list right away, then hydrate to fill in the `contact` join
@@ -372,7 +392,7 @@ export default function InboxPage() {
         }
       }
     },
-    [activeConversation, hydrateConversation]
+    [activeConversation, hydrateConversation, selectedNumberId]
   );
 
   // Subscribe to realtime. The `isConnected` flag below feeds the
@@ -687,6 +707,41 @@ export default function InboxPage() {
             </div>
           )}
 
+          {/* WhatsApp number filter — only shown if >1 connected number */}
+          {whatsappConfigs.length > 1 && (
+            <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
+              <Label className="shrink-0 text-[11px] text-muted-foreground">
+                Número:
+              </Label>
+              <Select
+                value={selectedNumberId ?? "all"}
+                onValueChange={(val: string | null) => {
+                  setSelectedNumberId(!val || val === "all" ? null : val);
+                }}
+              >
+                <SelectTrigger className="h-7 flex-1 text-xs" size="sm">
+                  <SelectValue placeholder="Todos">
+                    {(() => {
+                      if (!selectedNumberId) return "Todos";
+                      const cfg = whatsappConfigs.find(
+                        (c) => c.id === selectedNumberId,
+                      );
+                      return cfg?.label ?? cfg?.phone_number_id ?? "Número";
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {whatsappConfigs.map((cfg) => (
+                    <SelectItem key={cfg.id} value={cfg.id}>
+                      {cfg.label ?? cfg.phone_number_id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <ConversationList
             activeConversationId={activeConversation?.id ?? null}
             onSelect={handleSelectConversation}
@@ -696,6 +751,7 @@ export default function InboxPage() {
             filterDepartmentId={filterDepartmentId}
             filterAssignedAgentId={filterAssignedAgentId}
             filterUnassigned={filterUnassigned}
+            filterWhatsappConfigId={selectedNumberId}
           />
         </div>
 

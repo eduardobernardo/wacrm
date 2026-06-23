@@ -1,11 +1,8 @@
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import {
-  sanitizePhoneForMeta,
-  isValidE164,
-  phoneVariants,
-  isRecipientNotAllowedError,
-} from '@/lib/whatsapp/phone-utils'
+import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
+import { resolveWhatsappConfig } from '@/lib/whatsapp/resolve-config'
+import { sendWithPhoneVariants } from '@/lib/whatsapp/phone-variants'
 import { supabaseAdmin } from '@/lib/supabase/admin-client'
 
 // ------------------------------------------------------------
@@ -31,6 +28,9 @@ interface SendTextArgs {
   conversationId: string
   contactId: string
   text: string
+  /** Explicit WhatsApp config id for proactive sends (e.g. time_based,
+   *  tag_added). Ignored when conversationId resolves to a config. */
+  whatsappConfigId?: string
 }
 
 interface SendTemplateArgs {
@@ -41,6 +41,8 @@ interface SendTemplateArgs {
   templateName: string
   language?: string
   params?: string[]
+  /** Explicit WhatsApp config id for proactive sends. */
+  whatsappConfigId?: string
 }
 
 export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_message_id: string }> {
@@ -83,14 +85,11 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error(`contact phone invalid: ${contact.phone}`)
   }
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
-  }
+  const config = await resolveWhatsappConfig(db, {
+    accountId: input.accountId,
+    conversationId: input.conversationId,
+    whatsappConfigId: input.whatsappConfigId,
+  })
 
   const accessToken = decrypt(config.access_token)
 
@@ -115,26 +114,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     return r.messageId
   }
 
-  // Same phone-variant retry as /api/whatsapp/send — Meta sandbox and
-  // numbers registered with/without a trunk 0 both require this to
-  // reliably land a message.
-  const variants = phoneVariants(sanitized)
-  let workingPhone = sanitized
-  let waMessageId = ''
-  let lastError: unknown = null
-  for (const v of variants) {
-    try {
-      waMessageId = await attempt(v)
-      workingPhone = v
-      lastError = null
-      break
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!isRecipientNotAllowedError(msg)) throw err
-      lastError = err
-    }
-  }
-  if (lastError) throw lastError
+  const { result: waMessageId, workingPhone } = await sendWithPhoneVariants(attempt, sanitized)
 
   if (workingPhone !== sanitized) {
     await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)

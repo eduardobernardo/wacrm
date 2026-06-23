@@ -40,6 +40,7 @@ interface BroadcastPayload {
   audience: AudienceConfig;
   variables: Record<string, VariableMapping>;
   replyRouting?: Record<string, unknown> | null;
+  whatsappConfigId?: string;
 }
 
 interface UseBroadcastSendingReturn {
@@ -147,12 +148,19 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
   const [progress, setProgress] = useState(0);
 
   async function resolveAudience(audience: AudienceConfig): Promise<Contact[]> {
+    if (!accountId) {
+      throw new Error('Your profile is not linked to an account.');
+    }
+
     const supabase = createClient();
 
     let contacts: Contact[] = [];
 
     if (audience.type === 'all') {
-      const { data, error } = await supabase.from('contacts').select('*');
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('account_id', accountId);
       if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
       contacts = data ?? [];
     } else if (
@@ -175,6 +183,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         const { data, error } = await supabase
           .from('contacts')
           .select('*')
+          .eq('account_id', accountId)
           .in('id', uniqueContactIds);
         if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
         contacts = data ?? [];
@@ -238,7 +247,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     const { data: existing, error: lookupErr } = await supabase
       .from('contacts')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('account_id', accountId)
       .in('phone', phones);
     if (lookupErr) {
       throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
@@ -309,6 +318,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     const { data, error } = await supabase
       .from('contacts')
       .select('*')
+      .eq('account_id', accountId)
       .in('id', contactIds);
     if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
     return data ?? [];
@@ -364,6 +374,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           reply_routing: payload.replyRouting ?? null,
           status: 'sending',
           total_recipients: contacts.length,
+          whatsapp_config_id: payload.whatsappConfigId ?? undefined,
         }),
       });
 
@@ -459,6 +470,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
               recipients: apiRecipients,
               template_name: payload.template.name,
               template_language: payload.template.language ?? 'en_US',
+              broadcast_id: broadcast.id,
             }),
           });
 

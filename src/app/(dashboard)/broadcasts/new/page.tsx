@@ -1,15 +1,31 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { MessageTemplate } from '@/types';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
 import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-template';
 import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audience';
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
 import { Check } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+interface WhatsappConfig {
+  id: string;
+  label: string | null;
+  phone_number_id: string;
+}
 
 const steps = [
   { label: 'Modelo', key: 'template' },
@@ -21,6 +37,7 @@ const steps = [
 export default function NewBroadcastPage() {
   const router = useRouter();
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
+  const { accountId } = useAuth();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
@@ -41,6 +58,30 @@ export default function NewBroadcastPage() {
   const [name, setName] = useState('');
   const [replyRouting, setReplyRouting] = useState<Record<string, unknown> | null>(null);
 
+  // WhatsApp multi-number selector (only shown if >1 connected number).
+  const [whatsappConfigs, setWhatsappConfigs] = useState<WhatsappConfig[]>([]);
+  const [selectedNumberId, setSelectedNumberId] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!accountId) return;
+    const supabase = createClient();
+    let cancelled = false;
+    supabase
+      .from('whatsapp_config')
+      .select('id, label, phone_number_id')
+      .eq('account_id', accountId)
+      .eq('status', 'connected')
+      .order('label', { nullsFirst: false })
+      .order('phone_number_id')
+      .then(({ data }) => {
+        if (cancelled) return;
+        setWhatsappConfigs((data as WhatsappConfig[] | null) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
   async function handleSend() {
     if (!template) return;
 
@@ -57,6 +98,7 @@ export default function NewBroadcastPage() {
         },
         variables,
         replyRouting,
+        whatsappConfigId: selectedNumberId,
       });
       router.push(`/broadcasts/${broadcastId}`);
     } catch (err) {
@@ -98,6 +140,7 @@ export default function NewBroadcastPage() {
         reply_routing: replyRouting ?? null,
         status: 'draft',
         total_recipients: 0,
+        whatsapp_config_id: selectedNumberId || undefined,
       }),
     });
 
@@ -195,7 +238,42 @@ export default function NewBroadcastPage() {
             />
           )}
           {currentStep === 3 && template && (
-            <Step4ScheduleSend
+            <>
+              {/* WhatsApp number selector — only shown if >1 connected number */}
+              {whatsappConfigs.length > 1 && (
+                <div className="mb-4 flex items-center gap-3">
+                  <Label className="shrink-0 text-sm text-muted-foreground">
+                    Enviar por:
+                  </Label>
+                  <Select
+                    value={selectedNumberId ?? 'default'}
+                    onValueChange={(val) => {
+                      setSelectedNumberId(
+                        !val || val === 'default' ? undefined : (val as string),
+                      );
+                    }}
+                  >
+                    <SelectTrigger className="h-9 flex-1 text-sm">
+                      <SelectValue placeholder="Padrão (único ou fallback)">
+                        {(() => {
+                          if (!selectedNumberId) return 'Padrão (único ou fallback)';
+                          const cfg = whatsappConfigs.find((c) => c.id === selectedNumberId);
+                          return cfg?.label ?? cfg?.phone_number_id ?? 'Número';
+                        })()}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Padrão (único ou fallback)</SelectItem>
+                      {whatsappConfigs.map((cfg) => (
+                        <SelectItem key={cfg.id} value={cfg.id}>
+                          {cfg.label ?? cfg.phone_number_id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <Step4ScheduleSend
               name={name}
               onNameChange={setName}
               template={template}
@@ -208,6 +286,7 @@ export default function NewBroadcastPage() {
               isProcessing={isProcessing}
               progress={progress}
             />
+            </>
           )}
         </div>
       </div>

@@ -16,6 +16,11 @@ import {
 import { getSubscription, effectiveTier } from '@/lib/billing/subscription'
 import { getPlanLimits, isUnlimited } from '@/lib/billing/plans'
 
+/** Simple UUID v4 format check — defense-in-depth against injection in .or() filters. */
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+}
+
 interface WhatsAppMessage {
   id: string
   from: string
@@ -250,6 +255,17 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const config = configRows[0]
 
+      // Discard inbound messages for disconnected numbers (soft-deleted).
+      // access_token is NULL after soft delete, and decrypting NULL would throw.
+      if (config.status !== 'connected') {
+        console.warn(
+          `[webhook] discarding inbound message for disconnected number:`,
+          phoneNumberId,
+          `(account ${config.account_id})`,
+        )
+        continue
+      }
+
       const decryptedAccessToken = decrypt(config.access_token)
 
       for (let i = 0; i < value.messages.length; i++) {
@@ -266,7 +282,8 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          config.id
         )
       }
     }
@@ -377,7 +394,22 @@ async function handleStatusUpdate(status: {
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
-async function flagBroadcastReplyIfAny(accountId: string, contactId: string, conversationId: string) {
+type BroadcastRecipientWithBroadcast = {
+  id: string
+  status: string
+  broadcast_id: string
+  broadcasts: {
+    account_id: string
+    reply_routing: RouteTarget | null
+    whatsapp_config_id: string | null
+  }[]
+}
+
+async function flagBroadcastReplyIfAny(accountId: string, contactId: string, conversationId: string, whatsappConfigId: string) {
+  if (!isUuid(whatsappConfigId)) {
+    console.error('[webhook] flagBroadcastReplyIfAny: invalid whatsappConfigId (not a UUID):', whatsappConfigId)
+    return
+  }
   try {
     // Most recent outbound broadcast in this account that hasn't
     // been replied to yet. Account-scoped so a shared inbox reply
@@ -385,19 +417,23 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string, con
     // sent it.
     const { data: recs, error } = await supabaseAdmin()
       .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(account_id, reply_routing)')
+      .select('id, status, broadcast_id, broadcasts!inner(account_id, reply_routing, whatsapp_config_id)')
       .eq('contact_id', contactId)
       .eq('broadcasts.account_id', accountId)
+      // Match broadcasts sent from this number OR broadcasts with no
+      // specific number (NULL = "all numbers" — the default for
+      // single-number accounts where the selector doesn't appear).
+      // Postgres `= NULL` never matches, so we use .or() to include NULLs.
+      .or(`broadcasts.whatsapp_config_id.is.null,broadcasts.whatsapp_config_id.eq.${whatsappConfigId}`)
       .in('status', ['sent', 'delivered', 'read'])
       .order('created_at', { ascending: false })
       .limit(1)
 
     if (error || !recs || recs.length === 0) return
 
-    const row = recs[0]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const broadcast = row.broadcasts as any
-    const replyRouting = broadcast?.reply_routing as RouteTarget | null
+    const row = recs[0] as BroadcastRecipientWithBroadcast
+    const broadcast = row.broadcasts[0]
+    const replyRouting = broadcast?.reply_routing ?? null
 
     // Atomically flip to replied — the .in(status, …) filter ensures
     // only one concurrent delivery wins the race.  The loser sees the
@@ -521,7 +557,8 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  whatsappConfigId: string
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -540,7 +577,8 @@ async function processMessage(
   const conversation = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
-    contactRecord.id
+    contactRecord.id,
+    whatsappConfigId
   )
   if (!conversation) return
 
@@ -646,7 +684,7 @@ async function processMessage(
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id, conversation.id)
+  await flagBroadcastReplyIfAny(accountId, contactRecord.id, conversation.id, whatsappConfigId)
 
   // ============================================================
   // Flow runner dispatch.
@@ -917,9 +955,18 @@ async function findOrCreateContact(
   // WhatsApp config owner as a stable default).
 
   // Plan limit: number of contacts per account.
-  const sub = await getSubscription(supabaseAdmin(), accountId)
-  const limit = getPlanLimits(effectiveTier(sub)).maxContacts
-  if (!isUnlimited(limit)) {
+  // Wrapped in try/catch: a transient DB error during billing read
+  // must not abort message processing (the webhook already ack'd 200
+  // to Meta, so a thrown error would silently lose the message).
+  // Fail-open: skip the limit check on billing read failure.
+  let limit: number | null = null
+  try {
+    const sub = await getSubscription(supabaseAdmin(), accountId)
+    limit = getPlanLimits(effectiveTier(sub)).maxContacts
+  } catch (err) {
+    console.error('[webhook] billing read failed, skipping contact limit check:', err)
+  }
+  if (limit !== null && !isUnlimited(limit)) {
     const { count, error: limitErr } = await supabaseAdmin()
       .from('contacts')
       .select('*', { count: 'exact', head: true })
@@ -964,13 +1011,15 @@ async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  whatsappConfigId: string,
 ) {
-  // Look for existing conversation in this account
+  // Look for existing conversation in this account for this contact + number
   const { data: existing, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('whatsapp_config_id', whatsappConfigId)
     .single()
 
   if (!findError && existing) {
@@ -985,11 +1034,26 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: configOwnerUserId,
       contact_id: contactId,
+      whatsapp_config_id: whatsappConfigId,
     })
     .select()
     .single()
 
   if (createError) {
+    // Lost a race: a concurrent inbound delivery for the same
+    // contact+number created the conversation between our lookup
+    // and insert, and the unique index rejected the duplicate.
+    // Re-resolve the existing row instead of dropping the message.
+    if (isUniqueViolation(createError)) {
+      const { data: raced } = await supabaseAdmin()
+        .from('conversations')
+        .select('*')
+        .eq('account_id', accountId)
+        .eq('contact_id', contactId)
+        .eq('whatsapp_config_id', whatsappConfigId)
+        .single()
+      if (raced) return raced
+    }
     console.error('Error creating conversation:', createError)
     return null
   }

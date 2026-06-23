@@ -96,19 +96,20 @@ async function syncSubscription(sub: Stripe.Subscription, accountIdOverride?: st
   }
 
   const priceId = sub.items.data[0]?.price?.id;
-  const tier = tierFromPriceId(priceId) ?? "free";
+  const tier = tierFromPriceId(priceId);
+  const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
 
-  // Safety: if we received a price ID we don't recognize, don't silently
-  // downgrade to "free" — it's likely a misconfigured env var.
+  // If we received a price ID we don't recognize (tier === null && priceId),
+  // do NOT silently downgrade to "free" — it's likely a misconfigured env var.
   // Persist Stripe IDs and status so the customer portal and future
-  // webhook lookups work, but do NOT overwrite the plan.
-  if (priceId && tier === "free") {
+  // webhook lookups work, but preserve the existing plan (omit `plan` from
+  // the update — PostgREST leaves unmentioned columns untouched).
+  if (priceId && tier === null) {
     console.error(
       `[billing/webhook] Unrecognized price ${priceId} for sub ${sub.id}. ` +
       `Check STRIPE_PRICE_PRO / STRIPE_PRICE_BUSINESS env vars. ` +
       `Persisting Stripe IDs but keeping current plan.`,
     );
-    const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
     await billingAdmin()
       .from("subscriptions")
       .update({
@@ -122,12 +123,18 @@ async function syncSubscription(sub: Stripe.Subscription, accountIdOverride?: st
     return;
   }
 
-  const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+  // No price ID at all (shouldn't happen for a real subscription, but
+  // defensive) → fall back to free.
+  if (!priceId) {
+    console.warn(
+      `[billing/webhook] No price ID on sub ${sub.id}. Falling back to free.`,
+    );
+  }
 
   await billingAdmin()
     .from("subscriptions")
     .update({
-      plan: tier,
+      plan: tier ?? "free",
       status: mapStatus(sub.status),
       stripe_customer_id: customerId ?? null,
       stripe_subscription_id: sub.id,

@@ -246,6 +246,7 @@ export interface FlowRow {
   fallback_policy: FlowFallbackPolicy;
   execution_count: number;
   last_executed_at: string | null;
+  whatsapp_config_id: string | null;
   created_at: string;
   updated_at: string;
 }

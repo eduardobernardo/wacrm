@@ -171,3 +171,24 @@ export async function requireRole(min: AccountRole): Promise<AccountContext> {
   }
   return ctx;
 }
+
+/**
+ * Resolve the caller's account_id from their profile.
+ *
+ * A lighter alternative to `getCurrentAccount` for routes that only
+ * need the account_id and handle their own error responses. Returns
+ * null if the user has no profile or no account — callers should
+ * treat that as "not in an account" and return their own 403/200.
+ */
+export async function resolveAccountId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("account_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error || !data?.account_id) return null;
+  return data.account_id as string;
+}

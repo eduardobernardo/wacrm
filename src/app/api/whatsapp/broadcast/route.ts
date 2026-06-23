@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { resolveAccountId } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
@@ -10,6 +11,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
+import { resolveWhatsappConfig } from '@/lib/whatsapp/resolve-config'
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -83,12 +85,7 @@ export async function POST(request: Request) {
     // + broadcasts are all account-scoped post-multi-user, so the
     // old `.eq('user_id', user.id)` filters miss every row created
     // by a teammate.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
+    const accountId = await resolveAccountId(supabase, user.id)
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
@@ -103,6 +100,7 @@ export async function POST(request: Request) {
       template_name,
       template_language,
       template_params,
+      broadcast_id,
     } = body
 
     // Normalize to a list of {phone, params} regardless of shape.
@@ -134,19 +132,30 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
-
-    if (configError || !config) {
+    // Resolve the WhatsApp config for this broadcast.
+    let config;
+    try {
+      let broadcastConfigId: string | null = null
+      if (broadcast_id) {
+        const { data: broadcast, error: broadcastErr } = await supabase
+          .from('broadcasts')
+          .select('whatsapp_config_id')
+          .eq('id', broadcast_id)
+          .eq('account_id', accountId)
+          .maybeSingle()
+        if (broadcastErr) {
+          console.error('[broadcast] failed to look up broadcast config:', broadcastErr)
+        }
+        broadcastConfigId = broadcast?.whatsapp_config_id ?? null
+      }
+      config = await resolveWhatsappConfig(supabase, {
+        accountId,
+        whatsappConfigId: broadcastConfigId,
+      })
+    } catch (e) {
       return NextResponse.json(
-        {
-          error:
-            'WhatsApp not configured. Please set up your WhatsApp integration first.',
-        },
-        { status: 400 }
+        { error: e instanceof Error ? e.message : 'WhatsApp config error' },
+        { status: 400 },
       )
     }
 

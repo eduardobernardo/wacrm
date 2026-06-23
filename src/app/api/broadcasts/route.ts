@@ -18,6 +18,7 @@ export async function POST(request: Request) {
       reply_routing,
       status,
       total_recipients,
+      whatsapp_config_id,
     } = body
 
     // Plan limit: only enforced for sending broadcasts (status = 'sending').
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
         reply_routing: reply_routing ?? null,
         status: status ?? 'draft',
         total_recipients: total_recipients ?? 0,
+        whatsapp_config_id: whatsapp_config_id ?? null,
         sent_count: 0,
         delivered_count: 0,
         read_count: 0,

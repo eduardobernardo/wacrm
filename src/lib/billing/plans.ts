@@ -82,7 +82,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     priceMonthlyBRL: 99,
     stripePriceEnv: "STRIPE_PRICE_PRO",
     limits: {
-      maxWhatsappNumbers: 1,
+      maxWhatsappNumbers: overrideMaxWhatsappNumbers("pro", 1),
       maxMembers: 5,
       maxContacts: 10_000,
       monthlyBroadcasts: 20,
@@ -96,10 +96,10 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     priceMonthlyBRL: 249,
     stripePriceEnv: "STRIPE_PRICE_BUSINESS",
     limits: {
-      // 1 today; bump to a higher number (or UNLIMITED) when the
-      // multi-number inbox work lands — see the whatsapp_config
-      // UNIQUE(account_id) constraint that must be relaxed first.
-      maxWhatsappNumbers: 1,
+      // Bump to a higher number (or UNLIMITED) when the multi-number
+      // inbox work lands — see the whatsapp_config UNIQUE(account_id)
+      // constraint that must be relaxed first.
+      maxWhatsappNumbers: overrideMaxWhatsappNumbers("business", 3),
       maxMembers: 20,
       maxContacts: UNLIMITED,
       monthlyBroadcasts: UNLIMITED,
@@ -108,6 +108,31 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     },
   },
 };
+
+// Override WhatsApp number limits via env vars (decision 4 + 5).
+// NEXT_PUBLIC_ prefix so the client bundle sees the same value as the server.
+// Falls back to the hardcoded default if the env var is absent or invalid.
+function overrideMaxWhatsappNumbers(
+  tier: "pro" | "business",
+  defaultValue: number,
+): number {
+  const envName =
+    tier === "pro"
+      ? "NEXT_PUBLIC_PRO_MAX_WHATSAPP_NUMBERS"
+      : "NEXT_PUBLIC_BUSINESS_MAX_WHATSAPP_NUMBERS";
+  const raw = process.env[envName];
+  if (raw == null || raw === "") return defaultValue;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    console.warn(`[billing] ${envName} has invalid value "${raw}"; falling back to default ${defaultValue}.`);
+    return defaultValue;
+  }
+  if (parsed === 0) {
+    console.warn(`[billing] ${envName} is 0; this will disable WhatsApp connections for the ${tier} plan.`);
+  }
+  return parsed;
+}
+
 
 /** Limits for a tier. */
 export function getPlanLimits(tier: PlanTier): PlanLimits {

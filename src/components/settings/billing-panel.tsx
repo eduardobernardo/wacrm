@@ -83,7 +83,8 @@ export function BillingPanel() {
         supabase
           .from("whatsapp_config")
           .select("*", { count: "exact", head: true })
-          .eq("account_id", accountId),
+          .eq("account_id", accountId)
+          .eq("status", "connected"),
         supabase
           .from("profiles")
           .select("*", { count: "exact", head: true })

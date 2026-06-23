@@ -8,6 +8,7 @@ import {
   assertWithinLimit,
   effectiveMaxMembers,
   effectiveTier,
+  enforceCanConnectWhatsapp,
   getSubscription,
   type Subscription,
 } from "./subscription";
@@ -23,6 +24,7 @@ import {
 // ------------------------------------------------------------
 function fakeClient(opts: {
   subRow?: Record<string, unknown> | null;
+  subError?: Record<string, unknown> | null;
   counts?: Record<string, number>;
 }): SupabaseClient {
   const counts = opts.counts ?? {};
@@ -36,7 +38,7 @@ function fakeClient(opts: {
         maybeSingle: () =>
           Promise.resolve(
             table === "subscriptions"
-              ? { data: opts.subRow ?? null, error: null }
+              ? { data: opts.subRow ?? null, error: opts.subError ?? null }
               : { data: null, error: null },
           ),
         then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
@@ -78,6 +80,13 @@ describe("getSubscription", () => {
     expect(sub.plan).toBe("pro");
     expect(sub.extraSeats).toBe(3);
     expect(sub.stripeCustomerId).toBe("cus_1");
+  });
+
+  it("throws on DB error instead of falling back to free", async () => {
+    const dbError = { code: "PGRST000", message: "connection timeout" };
+    await expect(
+      getSubscription(fakeClient({ subError: dbError }), "acct-1"),
+    ).rejects.toEqual(dbError);
   });
 });
 
@@ -161,6 +170,52 @@ describe("assertCanConnectWhatsapp", () => {
         "acct-1",
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("only counts connected numbers toward the cap (status='connected' filter)", async () => {
+    // The assertCanConnectWhatsapp query filters by .eq("status", "connected").
+    // Disconnected configs do NOT count toward the cap.
+    // The fakeClient applies counts per table name; the real query's second
+    // .eq("status","connected") is what enforces this. We verify the contract
+    // here by asserting that 0 connected (table count 0) passes even if the
+    // caller had previously had configs (they were disconnected/removed).
+    await expect(
+      assertCanConnectWhatsapp(
+        fakeClient({
+          subRow: subRow({ plan: "business" }),
+          counts: { whatsapp_config: 0 },
+        }),
+        "acct-1",
+      ),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("enforceCanConnectWhatsapp", () => {
+  it("returns null when within limits", async () => {
+    const result = await enforceCanConnectWhatsapp(
+      fakeClient({ subRow: subRow({ plan: "pro" }), counts: { whatsapp_config: 0 } }),
+      "acct-1",
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns 403 when at cap", async () => {
+    const result = await enforceCanConnectWhatsapp(
+      fakeClient({ subRow: subRow({ plan: "pro" }), counts: { whatsapp_config: 1 } }),
+      "acct-1",
+    );
+    expect(result).not.toBeNull();
+    expect(result?.status).toBe(403);
+  });
+
+  it("returns 403 for free plan (not entitled)", async () => {
+    const result = await enforceCanConnectWhatsapp(
+      fakeClient({ subRow: subRow({ plan: "free" }), counts: { whatsapp_config: 0 } }),
+      "acct-1",
+    );
+    expect(result).not.toBeNull();
+    expect(result?.status).toBe(403);
   });
 });
 

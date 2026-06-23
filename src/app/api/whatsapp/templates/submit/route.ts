@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
+import { resolveAccountId } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
 import {
@@ -24,6 +25,7 @@ function buildUpsertRow(
     status: 'DRAFT' | string
     metaTemplateId: string | null
     submissionError: string | null
+    wabaId: string | null
   },
 ) {
   return {
@@ -31,9 +33,10 @@ function buildUpsertRow(
     // of migration 017. Without this an INSERT throws on the
     // not-null constraint.
     account_id: accountId,
-    // Original author — kept as audit only. The unique index is
-    // still on (user_id, name, language) — see the upsert helper
-    // for the cross-teammate dedup follow-up.
+    // WABA scoping — templates are approved per-WABA. Different
+    // WhatsApp numbers may belong to different WABAs.
+    waba_id: extras.wabaId,
+    // Original author — kept as audit only.
     user_id: userId,
     name: payload.name,
     category: payload.category,
@@ -60,14 +63,13 @@ async function upsertTemplateRow(
   supabase: SupabaseClient,
   row: ReturnType<typeof buildUpsertRow>,
 ) {
-  // TODO(account-sharing): conflict target is still scoped to
-  // user_id. Once a follow-up migration drops the legacy unique
-  // index on (user_id, name, language) and adds (account_id,
-  // name, language), switch `onConflict` here so two teammates
-  // can't shadow each other's same-named template.
+  // Unique index is now (account_id, waba_id, name, language) per
+  // migration 031 — templates with the same name across different
+  // WABAs won't collide. Rows with waba_id=NULL (drafts) skip the
+  // constraint (Postgres excludes NULL from unique indexes).
   return supabase
     .from('message_templates')
-    .upsert(row, { onConflict: 'user_id,name,language' })
+    .upsert(row, { onConflict: 'account_id,waba_id,name,language' })
     .select()
     .single()
 }
@@ -99,12 +101,7 @@ export async function POST(request: Request) {
 
     // Resolve the caller's account_id — whatsapp_config + the
     // message_templates row are account-scoped post-multi-user.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
+    const accountId = await resolveAccountId(supabase, user.id)
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
@@ -113,8 +110,11 @@ export async function POST(request: Request) {
     }
 
     let payload: TemplatePayload
+    let whatsappConfigId: string | undefined
     try {
-      payload = (await request.json()) as TemplatePayload
+      const rawBody = await request.json()
+      whatsappConfigId = rawBody.whatsapp_config_id as string | undefined
+      payload = rawBody as TemplatePayload
     } catch {
       return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
     }
@@ -144,22 +144,59 @@ export async function POST(request: Request) {
 
     let metaTemplateId: string
     let metaStatus: string
+    let resolvedWabaId: string | null = null
 
     if (dryRun) {
       metaTemplateId = `dry-run-${crypto.randomUUID()}`
       metaStatus = 'PENDING'
     } else {
-      const { data: config, error: configError } = await supabase
+      // Multi-WABA: if whatsapp_config_id is provided, resolve the
+      // specific config (scoped to account for ownership). Otherwise
+      // fall back to the only connected config (legacy single-number).
+      let configQuery = supabase
         .from('whatsapp_config')
         .select('*')
-        .eq('account_id', accountId)
-        .single()
-      if (configError || !config) {
+
+      let config: Record<string, any> | null = null
+
+      if (whatsappConfigId) {
+        const { data, error: configError } = await configQuery
+          .eq('id', whatsappConfigId)
+          .eq('account_id', accountId)
+          .eq('status', 'connected')
+          .single()
+        if (configError || !data) {
+          return NextResponse.json(
+            {
+              error:
+                'WhatsApp not configured or number disconnected. Reconnect in Settings.',
+            },
+            { status: 400 },
+          )
+        }
+        config = data
+      } else {
+        const { data: configs, error: configError } = await configQuery
+          .eq('account_id', accountId)
+          .eq('status', 'connected')
+        if (configError || !configs || configs.length === 0) {
+          return NextResponse.json(
+            { error: 'Nenhum número WhatsApp conectado.' },
+            { status: 400 },
+          )
+        }
+        if (configs.length > 1) {
+          return NextResponse.json(
+            { error: 'Selecione um número WhatsApp para enviar templates.' },
+            { status: 400 },
+          )
+        }
+        config = configs[0]
+      }
+
+      if (!config) {
         return NextResponse.json(
-          {
-            error:
-              'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
-          },
+          { error: 'WhatsApp config not found.' },
           { status: 400 },
         )
       }
@@ -172,6 +209,7 @@ export async function POST(request: Request) {
           { status: 400 },
         )
       }
+      resolvedWabaId = config.waba_id
 
       const accessToken = decrypt(config.access_token)
 
@@ -207,6 +245,7 @@ export async function POST(request: Request) {
             status: 'DRAFT',
             metaTemplateId: null,
             submissionError: message,
+            wabaId: config.waba_id ?? null,
           }),
         )
         const isRateLimit = /\b429\b/.test(message)
@@ -227,6 +266,7 @@ export async function POST(request: Request) {
         status: normalizeStatus(metaStatus),
         metaTemplateId,
         submissionError: null,
+        wabaId: resolvedWabaId,
       }),
     )
 
