@@ -69,48 +69,48 @@ export const NODE_META: Record<
   NodeType,
   { label: string; icon: typeof Workflow; color: string }
 > = {
-  start: { label: "Start", icon: PlayCircle, color: "text-emerald-400" },
+  start: { label: "Início", icon: PlayCircle, color: "text-emerald-400" },
   send_message: {
-    label: "Send message",
+    label: "Enviar mensagem",
     icon: MessageCircle,
     color: "text-sky-400",
   },
   send_buttons: {
-    label: "Send buttons",
+    label: "Enviar botões",
     icon: ListChecks,
     color: "text-primary",
   },
   send_list: {
-    label: "Send list",
+    label: "Enviar lista",
     icon: ListPlus,
     color: "text-indigo-400",
   },
   send_media: {
-    label: "Send media",
+    label: "Enviar mídia",
     icon: Paperclip,
     color: "text-cyan-400",
   },
   collect_input: {
-    label: "Collect input",
+    label: "Coletar entrada",
     icon: Inbox,
     color: "text-teal-400",
   },
   condition: {
-    label: "If / else",
+    label: "Se / senão",
     icon: GitFork,
     color: "text-fuchsia-400",
   },
   set_tag: {
-    label: "Tag contact",
+    label: "Tag no contato",
     icon: Tag,
     color: "text-pink-400",
   },
   handoff: {
-    label: "Handoff to agent",
+    label: "Transferir para atendente",
     icon: UserPlus,
     color: "text-amber-400",
   },
-  end: { label: "End", icon: Flag, color: "text-muted-foreground" },
+  end: { label: "Fim", icon: Flag, color: "text-muted-foreground" },
 };
 
 // ============================================================
@@ -195,9 +195,9 @@ export function summarizeNode(node: BuilderNode): string | null {
       const caption = typeof cfg.caption === "string" ? cfg.caption : "";
       const label = mediaType
         ? mediaType.charAt(0).toUpperCase() + mediaType.slice(1)
-        : "Media";
-      if (!url) return `${label} (no file uploaded)`;
-      const name = filename || url.split("/").pop() || "file";
+        : "Mídia";
+      if (!url) return `${label} (nenhum arquivo enviado)`;
+      const name = filename || url.split("/").pop() || "arquivo";
       return caption
         ? `${label}: ${truncate(name, 30)} · ${truncate(caption, 40)}`
         : `${label}: ${truncate(name, 60)}`;
@@ -240,12 +240,9 @@ export function summarizeNode(node: BuilderNode): string | null {
       return subject === "tag" ? subjectStr : `${subjectStr} ${op}${valStr}`;
     }
     case "set_tag": {
-      const mode = cfg.mode === "remove" ? "Remove" : "Add";
+      const mode = cfg.mode === "remove" ? "Remover" : "Adicionar";
       const tagId = typeof cfg.tag_id === "string" ? cfg.tag_id : "";
-      // No tag name available without an async lookup here; show a
-      // short prefix of the UUID so users can disambiguate between
-      // multiple set_tag nodes at a glance.
-      return tagId ? `${mode} tag ${tagId.slice(0, 8)}…` : `${mode} tag (none picked)`;
+      return tagId ? `${mode} tag ${tagId.slice(0, 8)}…` : `${mode} tag (nenhuma selecionada)`;
     }
     case "handoff": {
       const note = typeof cfg.note === "string" ? cfg.note : "";

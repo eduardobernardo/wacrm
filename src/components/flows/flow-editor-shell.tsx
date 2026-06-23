@@ -97,7 +97,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
                 active={effectiveView === "list"}
                 onClick={() => choose("list")}
                 icon={<ListTree className="h-3 w-3" />}
-                label="List"
+                label="Lista"
               />
             </div>
           </div>

@@ -402,14 +402,14 @@ export function ImportModal({
         <div className="shrink-0 space-y-4 border-b border-border/80 px-6 pt-6 pb-5">
           <DialogHeader className="gap-1.5">
             <DialogTitle className="text-lg text-popover-foreground">
-              Import Contacts
+              Importar contatos
             </DialogTitle>
             <DialogDescription className="leading-relaxed text-muted-foreground">
-              Upload a CSV with a required{' '}
+              Envie um CSV com a coluna obrigatória{' '}
               <code className="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">
                 phone
               </code>{' '}
-              column. Optional:{' '}
+              Opcionais:{' '}
               <code className="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">
                 name
               </code>
@@ -425,7 +425,7 @@ export function ImportModal({
               <code className="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">
                 tags
               </code>{' '}
-              (comma-separated; quote multi-tag cells).
+              (separadas por vírgula, use aspas para múltiplas tags).
             </DialogDescription>
           </DialogHeader>
 
@@ -456,8 +456,8 @@ export function ImportModal({
                   {truncateFilename(file.name)}
                 </p>
                 <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                  {parsedRows.length} row{parsedRows.length !== 1 ? 's' : ''}{' '}
-                  ready
+                  {parsedRows.length} linha{parsedRows.length !== 1 ? 's' : ''}{' '}
+                  pronta{parsedRows.length !== 1 ? 's' : ''}
                 </span>
               </>
             ) : (
@@ -466,10 +466,10 @@ export function ImportModal({
                   <Upload className="size-5 text-muted-foreground group-hover:text-foreground" />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Click to choose a CSV file
+                  Clique para escolher um arquivo CSV
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  .csv up to your browser limit
+                  .csv até o limite do navegador
                 </p>
               </>
             )}
@@ -489,7 +489,7 @@ export function ImportModal({
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
-                  Preview · first {preview.length}
+                  Pré-visualização · primeiras {preview.length}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {tagStats.rowsWithTags > 0 && (
@@ -509,17 +509,17 @@ export function ImportModal({
                     <thead>
                       <tr className="border-b border-border bg-background/60">
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                          Phone
+                          Telefone
                         </th>
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                          Name
+                          Nome
                         </th>
                         <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                          Email
+                          E-mail
                         </th>
                         {previewHasCompany && (
                           <th className="px-3 py-2 text-left font-medium whitespace-nowrap text-muted-foreground">
-                            Company
+                            Empresa
                           </th>
                         )}
                         {previewHasTags && (
@@ -579,8 +579,7 @@ export function ImportModal({
 
               {parsedRows.length > PREVIEW_LIMIT && (
                 <p className="text-center text-[11px] text-muted-foreground">
-                  + {parsedRows.length - PREVIEW_LIMIT} more row
-                  {parsedRows.length - PREVIEW_LIMIT !== 1 ? 's' : ''} not shown
+                + {parsedRows.length - PREVIEW_LIMIT} linha{parsedRows.length - PREVIEW_LIMIT !== 1 ? 's' : ''} a mais não exibida{parsedRows.length - PREVIEW_LIMIT !== 1 ? 's' : ''}
                 </p>
               )}
             </div>
@@ -588,31 +587,31 @@ export function ImportModal({
 
           {result && (
             <div className="rounded-xl border border-border bg-background/50 p-4">
-              <p className="text-sm font-medium text-popover-foreground">Import complete</p>
+              <p className="text-sm font-medium text-popover-foreground">Importação concluída</p>
               <div className="mt-3 flex flex-wrap gap-3">
                 {result.imported > 0 && (
                   <div className="text-primary flex items-center gap-1.5 text-sm">
                     <CheckCircle className="size-4 shrink-0" />
-                    {result.imported} imported
+                    {result.imported} importados
                   </div>
                 )}
                 {result.tagsAssigned > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-cyan-400">
                     <CheckCircle className="size-4 shrink-0" />
                     {result.tagsAssigned} tag
-                    {result.tagsAssigned !== 1 ? 's' : ''} assigned
+                    {result.tagsAssigned !== 1 ? 's' : ''} atribuída{result.tagsAssigned !== 1 ? 's' : ''}
                   </div>
                 )}
                 {result.skipped > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-amber-400">
                     <AlertTriangle className="size-4 shrink-0" />
-                    {result.skipped} skipped
+                    {result.skipped} ignorados
                   </div>
                 )}
                 {result.failed > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-red-400">
                     <XCircle className="size-4 shrink-0" />
-                    {result.failed} failed
+                    {result.failed} falharam
                   </div>
                 )}
               </div>
@@ -627,7 +626,7 @@ export function ImportModal({
             onClick={() => handleOpenChange(false)}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            {result ? 'Close' : 'Cancel'}
+            {result ? 'Fechar' : 'Cancelar'}
           </Button>
           {!result && (
             <Button
@@ -637,8 +636,7 @@ export function ImportModal({
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {importing && <Loader2 className="size-4 animate-spin" />}
-              Import {parsedRows.length > 0 ? parsedRows.length : ''} contact
-              {parsedRows.length !== 1 ? 's' : ''}
+              Importar {parsedRows.length > 0 ? parsedRows.length : ''} contato{parsedRows.length !== 1 ? 's' : ''}
             </Button>
           )}
         </DialogFooter>

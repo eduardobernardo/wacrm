@@ -77,7 +77,7 @@ export function TransferDialog({
         setDepartments(data.departments ?? []);
       })
       .catch(() => {
-        if (!cancelled) toast.error("Failed to load departments");
+        if (!cancelled) toast.error("Falha ao carregar departamentos");
       })
       .finally(() => {
         if (!cancelled) setLoadingDepts(false);
@@ -104,7 +104,7 @@ export function TransferDialog({
         setDeptMembers(data.members ?? []);
       })
       .catch(() => {
-        if (!cancelled) toast.error("Failed to load department members");
+        if (!cancelled) toast.error("Falha ao carregar membros do departamento");
       })
       .finally(() => {
         if (!cancelled) setLoadingDeptMembers(false);
@@ -128,7 +128,7 @@ export function TransferDialog({
         setAccountMembers(data.members ?? []);
       })
       .catch(() => {
-        if (!cancelled) toast.error("Failed to load account members");
+        if (!cancelled) toast.error("Falha ao carregar membros da conta");
       })
       .finally(() => {
         if (!cancelled) setLoadingAccountMembers(false);
