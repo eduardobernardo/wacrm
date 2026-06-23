@@ -6,10 +6,6 @@ export async function POST(request: Request) {
   try {
     const ctx = await requireRole('agent')
 
-    // Plan limit: number of broadcasts per month.
-    const limited = await enforceLimit(ctx.supabase, ctx.accountId, 'broadcasts')
-    if (limited) return limited
-
     const body = await request.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
@@ -23,6 +19,13 @@ export async function POST(request: Request) {
       status,
       total_recipients,
     } = body
+
+    // Plan limit: only enforced for sending broadcasts (status = 'sending').
+    // Drafts and other statuses are free — users can save work without a cap.
+    if (status === 'sending') {
+      const limited = await enforceLimit(ctx.supabase, ctx.accountId, 'broadcasts')
+      if (limited) return limited
+    }
 
     if (!name || !template_name) {
       return NextResponse.json(

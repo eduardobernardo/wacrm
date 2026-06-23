@@ -100,11 +100,25 @@ async function syncSubscription(sub: Stripe.Subscription, accountIdOverride?: st
 
   // Safety: if we received a price ID we don't recognize, don't silently
   // downgrade to "free" — it's likely a misconfigured env var.
+  // Persist Stripe IDs and status so the customer portal and future
+  // webhook lookups work, but do NOT overwrite the plan.
   if (priceId && tier === "free") {
     console.error(
       `[billing/webhook] Unrecognized price ${priceId} for sub ${sub.id}. ` +
-      `Check STRIPE_PRICE_PRO / STRIPE_PRICE_BUSINESS env vars. Skipping update.`,
+      `Check STRIPE_PRICE_PRO / STRIPE_PRICE_BUSINESS env vars. ` +
+      `Persisting Stripe IDs but keeping current plan.`,
     );
+    const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+    await billingAdmin()
+      .from("subscriptions")
+      .update({
+        stripe_customer_id: customerId ?? null,
+        stripe_subscription_id: sub.id,
+        status: mapStatus(sub.status),
+        current_period_end: periodEndISO(sub),
+        cancel_at_period_end: sub.cancel_at_period_end ?? false,
+      })
+      .eq("account_id", accountId);
     return;
   }
 
