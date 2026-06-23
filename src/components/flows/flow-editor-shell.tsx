@@ -91,7 +91,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
                 active={effectiveView === "canvas"}
                 onClick={() => choose("canvas")}
                 icon={<LayoutGrid className="h-3 w-3" />}
-                label="Canvas"
+                label="Tela"
               />
               <ToggleButton
                 active={effectiveView === "list"}

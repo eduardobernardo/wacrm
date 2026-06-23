@@ -245,7 +245,7 @@ function KeywordsInput({
           commit();
         }
       }}
-      placeholder="support, help, hi"
+              placeholder="suporte, ajuda, oi"
       className="bg-muted"
     />
   );
