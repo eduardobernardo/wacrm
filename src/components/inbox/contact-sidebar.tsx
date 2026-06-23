@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, Conversation } from "@/types";
 import {
   Phone,
   Mail,
@@ -15,6 +15,7 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,9 +23,10 @@ import { format } from "date-fns";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  conversation?: Conversation | null;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversation }: ContactSidebarProps) {
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -173,6 +175,49 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </div>
             )}
           </div>
+
+          {/* Department & Assignee */}
+          {conversation && (
+            <>
+              {/* Divider */}
+              <div className="my-4 border-t border-border" />
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  <Building2 className="h-3 w-3" />
+                  Departamento
+                </div>
+                <p className="px-1 text-sm text-foreground">
+                  {conversation.department?.name ?? "Não atribuído"}
+                </p>
+
+                <div className="mt-3 flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  <User className="h-3 w-3" />
+                  Responsável
+                </div>
+                {conversation.assignee ? (
+                  <div className="flex items-center gap-2 px-1">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
+                      {conversation.assignee.avatar_url ? (
+                        <img
+                          src={conversation.assignee.avatar_url}
+                          alt={conversation.assignee.full_name}
+                          className="h-6 w-6 rounded-full object-cover"
+                        />
+                      ) : (
+                        conversation.assignee.full_name.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <span className="text-sm text-foreground">
+                      {conversation.assignee.full_name}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="px-1 text-sm text-muted-foreground">Não atribuído</p>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Divider */}
           <div className="my-4 border-t border-border" />

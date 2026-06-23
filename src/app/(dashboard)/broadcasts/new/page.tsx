@@ -42,6 +42,7 @@ export default function NewBroadcastPage() {
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
   >({});
   const [name, setName] = useState('');
+  const [replyRouting, setReplyRouting] = useState<Record<string, unknown> | null>(null);
 
   async function handleSend() {
     if (!template) return;
@@ -58,6 +59,7 @@ export default function NewBroadcastPage() {
           excludeTagIds: audience.excludeTagIds,
         },
         variables,
+        replyRouting,
       });
       router.push(`/broadcasts/${broadcastId}`);
     } catch (err) {
@@ -108,6 +110,7 @@ export default function NewBroadcastPage() {
         type: audience.type,
         tagIds: audience.tagIds,
       },
+      reply_routing: replyRouting ?? null,
       status: 'draft',
       total_recipients: 0,
       sent_count: 0,
@@ -215,6 +218,8 @@ export default function NewBroadcastPage() {
               onNameChange={setName}
               template={template}
               audience={audience}
+              replyRouting={replyRouting}
+              onReplyRoutingChange={setReplyRouting}
               onSend={handleSend}
               onSaveDraft={handleSaveDraft}
               onBack={() => setCurrentStep(2)}

@@ -33,6 +33,8 @@
  */
 
 import { supabaseAdmin } from "./admin-client";
+import { applyRouting } from "@/lib/departments/distribute";
+import type { RouteTarget } from "@/lib/departments/types";
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -435,21 +437,45 @@ async function executeHandoff(
   run: FlowRunRow,
   node: FlowNodeRow,
 ): Promise<void> {
-  const cfg = node.config as { assign_to?: string; note?: string };
-  const convUpdate: Record<string, unknown> = {
-    status: "pending",
-    updated_at: new Date().toISOString(),
+  const cfg = node.config as {
+    assign_to?: string;
+    note?: string;
+    target?: RouteTarget;
   };
-  if (cfg.assign_to) convUpdate.assigned_agent_id = cfg.assign_to;
-  if (run.conversation_id) {
+
+  // Resolve the routing target: prefer explicit `target`, fall back to
+  // legacy `assign_to` which maps to a direct user assignment.
+  // Default strategy for department targets to 'auto' (matching the
+  // automation engine's behaviour) so a missing strategy doesn't silently
+  // fall through to sequential in `distribute.ts`.
+  let target: RouteTarget | null = cfg.target ?? null;
+  if (target && target.kind === 'department' && !target.strategy) {
+    target = { ...target, strategy: 'auto' };
+  }
+  if (!target && cfg.assign_to) {
+    target = { kind: 'user', user_id: cfg.assign_to };
+  }
+
+  if (run.conversation_id && target) {
+    await applyRouting(supabaseAdmin(), run.conversation_id, run.account_id, target, {
+      source: "flow",
+      newStatus: "pending",
+    });
+  } else if (run.conversation_id) {
+    // No target at all — just flip status to pending without assignment.
     await db
       .from("conversations")
-      .update(convUpdate)
+      .update({
+        status: "pending",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", run.conversation_id);
   }
+
   await logEvent(db, run.id, "handoff", node.node_key, {
     note: cfg.note ?? null,
-    assigned_to: cfg.assign_to ?? null,
+    target: target ?? null,
+    legacy_assign_to: cfg.assign_to ?? null,
   });
   await endRun(db, run.id, "handed_off", "handoff_node");
 }

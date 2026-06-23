@@ -4,6 +4,7 @@ import {
   type AccountRole,
   canDeleteAccount,
   canEditSettings,
+  canManageDepartments,
   canManageMembers,
   canSendMessages,
   canTransferOwnership,
@@ -126,5 +127,12 @@ describe("capability predicates", () => {
     expect(canTransferOwnership("admin")).toBe(false);
     expect(canTransferOwnership("agent")).toBe(false);
     expect(canTransferOwnership("viewer")).toBe(false);
+  });
+
+  it("canManageDepartments: admin+ only", () => {
+    expect(canManageDepartments("owner")).toBe(true);
+    expect(canManageDepartments("admin")).toBe(true);
+    expect(canManageDepartments("agent")).toBe(false);
+    expect(canManageDepartments("viewer")).toBe(false);
   });
 });

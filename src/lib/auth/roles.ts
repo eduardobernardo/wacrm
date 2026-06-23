@@ -107,3 +107,11 @@ export function canDeleteAccount(role: AccountRole): boolean {
 export function canTransferOwnership(role: AccountRole): boolean {
   return role === "owner";
 }
+
+/**
+ * Role check: can the user manage departments?
+ * Admin and owner can create, edit, and delete departments.
+ */
+export function canManageDepartments(role: AccountRole): boolean {
+  return hasMinRole(role, "admin");
+}

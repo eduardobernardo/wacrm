@@ -39,6 +39,7 @@ interface BroadcastPayload {
   template: MessageTemplate;
   audience: AudienceConfig;
   variables: Record<string, VariableMapping>;
+  replyRouting?: Record<string, unknown> | null;
 }
 
 interface UseBroadcastSendingReturn {
@@ -361,6 +362,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             customField: payload.audience.customField,
             excludeTagIds: payload.audience.excludeTagIds,
           },
+          reply_routing: payload.replyRouting ?? null,
           status: 'sending',
           total_recipients: contacts.length,
           sent_count: 0,

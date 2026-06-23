@@ -181,6 +181,7 @@ interface AutomationResources {
   members: AccountMember[]
   templates: MessageTemplate[]
   customFields: CustomField[]
+  departments: { id: string; name: string }[]
 }
 
 const ResourcesContext = createContext<AutomationResources>({
@@ -188,6 +189,7 @@ const ResourcesContext = createContext<AutomationResources>({
   members: [],
   templates: [],
   customFields: [],
+  departments: [],
 })
 
 function useResources(): AutomationResources {
@@ -199,6 +201,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   const [members, setMembers] = useState<AccountMember[]>([])
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
   const [customFields, setCustomFields] = useState<CustomField[]>([])
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -238,13 +241,25 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
       }
     })()
 
+    // Departments for department-based routing in assign_conversation.
+    void (async () => {
+      try {
+        const res = await fetch("/api/departments", { cache: "no-store" })
+        if (!res.ok) return
+        const json = (await res.json()) as { departments?: { id: string; name: string }[] }
+        if (!cancelled) setDepartments(json.departments ?? [])
+      } catch {
+        // Departments endpoint absent — caller falls back without department picker.
+      }
+    })()
+
     return () => {
       cancelled = true
     }
   }, [])
 
   return (
-    <ResourcesContext.Provider value={{ tags, members, templates, customFields }}>
+    <ResourcesContext.Provider value={{ tags, members, templates, customFields, departments }}>
       {children}
     </ResourcesContext.Provider>
   )
@@ -377,6 +392,46 @@ function AgentSelect({
       ))}
       {value && !selected && (
         <option value={value}>{value} (unknown agent)</option>
+      )}
+    </select>
+  )
+}
+
+/** Department dropdown by name, storing the department's id. Falls back to
+ *  a raw id input when the department list is unavailable. */
+function DepartmentSelect({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  const { departments } = useResources()
+  if (departments.length === 0) {
+    return (
+      <Input
+        placeholder="Department id"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-muted text-foreground"
+      />
+    )
+  }
+  const selected = departments.find((d) => d.id === value)
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={SELECT_CLASS}
+    >
+      <option value="">Select a department…</option>
+      {departments.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.name}
+        </option>
+      ))}
+      {value && !selected && (
+        <option value={value}>{value} (unknown department)</option>
       )}
     </select>
   )
@@ -1083,21 +1138,66 @@ function StepEditor({
     case "assign_conversation":
       return (
         <>
-          <FieldBlock label="Mode">
+          <FieldBlock label="Modo">
             <select
               value={(cfg.mode as string) ?? "round_robin"}
-              onChange={(e) => set({ mode: e.target.value })}
+              onChange={(e) => {
+                const mode = e.target.value
+                // Reset config when switching modes for backward compat
+                const patch: Record<string, unknown> = { mode }
+                if (mode === "specific") {
+                  patch.agent_id = cfg.agent_id ?? ""
+                } else if (mode === "department" || mode === "department_user") {
+                  patch.department_id = cfg.department_id ?? ""
+                  if (mode === "department") {
+                    patch.strategy = cfg.strategy ?? "auto"
+                  } else {
+                    patch.user_id = cfg.user_id ?? ""
+                  }
+                }
+                set(patch)
+              }}
               className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
             >
-              <option value="round_robin">Round-robin</option>
-              <option value="specific">Specific agent</option>
+              <option value="round_robin">Rodízio (conta)</option>
+              <option value="specific">Usuário específico</option>
+              <option value="department">Departamento (auto)</option>
+              <option value="department_user">Departamento + usuário específico</option>
             </select>
           </FieldBlock>
           {cfg.mode === "specific" && (
-            <FieldBlock label="Agent">
+            <FieldBlock label="Agente">
               <AgentSelect
                 value={(cfg.agent_id as string) ?? ""}
                 onChange={(v) => set({ agent_id: v })}
+              />
+            </FieldBlock>
+          )}
+          {(cfg.mode === "department" || cfg.mode === "department_user") && (
+            <FieldBlock label="Departamento">
+              <DepartmentSelect
+                value={(cfg.department_id as string) ?? ""}
+                onChange={(v) => set({ department_id: v })}
+              />
+            </FieldBlock>
+          )}
+          {cfg.mode === "department" && (
+            <FieldBlock label="Estratégia">
+              <select
+                value={(cfg.strategy as string) ?? "auto"}
+                onChange={(e) => set({ strategy: e.target.value })}
+                className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
+              >
+                <option value="auto">Auto (menos conversas)</option>
+                <option value="sequential">Sequencial (rodízio)</option>
+              </select>
+            </FieldBlock>
+          )}
+          {cfg.mode === "department_user" && (
+            <FieldBlock label="Usuário">
+              <AgentSelect
+                value={(cfg.user_id as string) ?? ""}
+                onChange={(v) => set({ user_id: v })}
               />
             </FieldBlock>
           )}

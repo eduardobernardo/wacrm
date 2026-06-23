@@ -15,6 +15,8 @@ import type {
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
+import { applyRouting } from '@/lib/departments/distribute'
+import type { RouteTarget } from '@/lib/departments/types'
 import { engineSendText, engineSendTemplate } from './meta-send'
 
 // ------------------------------------------------------------
@@ -423,23 +425,54 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'assign_conversation': {
       const cfg = step.step_config as AssignConversationStepConfig
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
-      let agentId = cfg.agent_id
-      if (cfg.mode === 'round_robin') {
-        // Pick any member of the account. The existing implementation
-        // only ever returned the automation's author; preserving that
-        // shape until a real round-robin algorithm replaces it.
-        const { data: profiles } = await db
-          .from('profiles')
-          .select('user_id')
-          .eq('account_id', args.automation.account_id)
-          .limit(1)
-        agentId = profiles?.[0]?.user_id
+
+      const conversationId = await resolveConversationId(args)
+      const accountId = args.automation.account_id
+
+      if (cfg.mode === 'specific') {
+        if (!cfg.agent_id) return 'no agent resolved'
+        const target: RouteTarget = { kind: 'user', user_id: cfg.agent_id }
+        await applyRouting(db, conversationId, accountId, target, { source: 'automation' })
+        return `assigned to ${cfg.agent_id}`
       }
+
+      if (cfg.mode === 'department') {
+        if (!cfg.department_id) return 'no department resolved'
+        const target: RouteTarget = {
+          kind: 'department',
+          department_id: cfg.department_id,
+          strategy: cfg.strategy || 'auto',
+        }
+        await applyRouting(db, conversationId, accountId, target, { source: 'automation' })
+        return `assigned via department ${cfg.department_id}`
+      }
+
+      if (cfg.mode === 'department_user') {
+        if (!cfg.department_id || !cfg.user_id) return 'no department/user resolved'
+        const target: RouteTarget = {
+          kind: 'department_user',
+          department_id: cfg.department_id,
+          user_id: cfg.user_id,
+        }
+        await applyRouting(db, conversationId, accountId, target, { source: 'automation' })
+        return `assigned to ${cfg.user_id} in department ${cfg.department_id}`
+      }
+
+      // mode === 'round_robin' (legacy placeholder)
+      // Pick any member of the account. The existing implementation
+      // only ever returned the automation's author; preserving that
+      // shape until a real round-robin algorithm replaces it.
+      const { data: profiles } = await db
+        .from('profiles')
+        .select('user_id')
+        .eq('account_id', accountId)
+        .limit(1)
+      const agentId = profiles?.[0]?.user_id
       if (!agentId) return 'no agent resolved'
       await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })
-        .eq('account_id', args.automation.account_id)
+        .eq('account_id', accountId)
         .eq('contact_id', args.contactId)
       return `assigned to ${agentId}`
     }

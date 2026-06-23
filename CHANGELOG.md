@@ -11,6 +11,37 @@ and polish.
 
 ## [Unreleased]
 
+### Added
+
+- **Departments.** Team segmentation with department-scoped conversation
+  visibility enforced by RLS. Admins create departments (Settings →
+  Departamentos), add members, and set up routing strategies
+  (auto/sequential). Agents only see conversations assigned to them or
+  in their departments' pool. Admins and owners retain full visibility.
+  - **Inbox transfer:** manual "Transferir" button routes conversations
+    to departments (auto/sequential), department + specific member, or
+    another agent.
+  - **Flow handoff node** extended with department routing targets.
+  - **Automation `assign_conversation`** step extended with department
+    modes, replacing the placeholder round-robin.
+  - **Broadcast reply routing:** configure where replies land (specific
+    agent, department auto/sequential, or department + specific member).
+  - **Inbox UX:** department badge + assignee avatar on every
+    conversation; admin filter by department or assignment.
+  - **Backfill:** existing conversations automatically linked to a
+    "Departamento Geral" so no agent loses access on migration day.
+
+  **Migration required** — apply `026_departments.sql`,
+  `027_conversation_visibility.sql`, and `028_broadcast_reply_routing.sql`
+  in order against your Supabase project.
+
+### Changed
+
+- **Conversation visibility RLS:** `conversations_select` and
+  `messages_select` now enforce department + assignment scoping.
+  `messages_modify` (`FOR ALL`) split into separate INSERT/UPDATE/DELETE
+  policies so it no longer overrides `messages_select`.
+
 Multi-user accounts ship. Every wacrm install is multi-tenant on the
 database side: a single user's signup creates a fresh "account", and
 every row is scoped to that account rather than to the user directly.

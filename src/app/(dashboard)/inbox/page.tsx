@@ -1,16 +1,26 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
+import type { Conversation, Message, Contact, ConversationStatus, Department } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useAuth } from "@/hooks/use-auth";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -19,6 +29,7 @@ const CONTACT_PANEL_STORAGE_KEY = "wacrm:inbox:contact-panel-open";
 export default function InboxPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, canManageMembers } = useAuth();
   /**
    * `?c=<id>` deep-link support. Used when landing here from the
    * dashboard's recent-conversations list so the right thread opens
@@ -34,6 +45,50 @@ export default function InboxPage() {
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
+
+  // Department filter state (Task #4) — visible to admin+ only.
+  type DeptFilter =
+    | { kind: "all" }
+    | { kind: "mine" }
+    | { kind: "unassigned" }
+    | { kind: "department"; departmentId: string };
+
+  const [deptFilter, setDeptFilter] = useState<DeptFilter>({ kind: "all" });
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const showDeptFilter = canManageMembers; // admin+ only
+
+  // Fetch departments once on mount (for the filter dropdown).
+  useEffect(() => {
+    if (!showDeptFilter) return;
+    const supabase = createClient();
+    let cancelled = false;
+    supabase
+      .from("departments")
+      .select("*")
+      .order("name")
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to fetch departments:", error);
+          return;
+        }
+        setDepartments((data as Department[]) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showDeptFilter]);
+
+  // Derived filter values for ConversationList props.
+  const filterDepartmentId = useMemo(
+    () => (deptFilter.kind === "department" ? deptFilter.departmentId : null),
+    [deptFilter]
+  );
+  const filterAssignedAgentId = useMemo(
+    () => (deptFilter.kind === "mine" ? user?.id ?? null : null),
+    [deptFilter, user?.id]
+  );
+  const filterUnassigned = deptFilter.kind === "unassigned";
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -118,7 +173,7 @@ export default function InboxPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("conversations")
-        .select("*, contact:contacts(*)")
+        .select("*, contact:contacts(*), department:departments(id, name)")
         .eq("id", convId)
         .maybeSingle();
       if (error) {
@@ -563,16 +618,84 @@ export default function InboxPage() {
             thread can occupy the full width. Always visible on lg+. */}
         <div
           className={cn(
-            "flex h-full flex-1 lg:flex-none",
+            "flex h-full flex-1 flex-col lg:flex-none",
             hasActiveConv ? "hidden lg:flex" : "flex",
           )}
         >
+          {/* Department filter — admin+ only */}
+          {showDeptFilter && (
+            <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
+              <Label className="shrink-0 text-[11px] text-muted-foreground">
+                Filtrar:
+              </Label>
+              <Select
+                value={
+                  deptFilter.kind === "all"
+                    ? "all"
+                    : deptFilter.kind === "mine"
+                      ? "mine"
+                      : deptFilter.kind === "unassigned"
+                        ? "unassigned"
+                        : `dept:${deptFilter.departmentId}`
+                }
+                onValueChange={(val: string | null) => {
+                  if (!val || val === "all") setDeptFilter({ kind: "all" });
+                  else if (val === "mine") setDeptFilter({ kind: "mine" });
+                  else if (val === "unassigned")
+                    setDeptFilter({ kind: "unassigned" });
+                  else if (val.startsWith("dept:"))
+                    setDeptFilter({
+                      kind: "department",
+                      departmentId: val.slice(5),
+                    });
+                }}
+              >
+                <SelectTrigger className="h-7 flex-1 text-xs" size="sm">
+                  {/* Resolve the label explicitly from the current value.
+                      base-ui's SelectValue otherwise renders the raw
+                      `value` string when its lookup misses (which
+                      happens during the initial render before the
+                      list of departments has hydrated). */}
+                  <SelectValue placeholder="Todos">
+                    {(() => {
+                      if (deptFilter.kind === "all") return "Todos";
+                      if (deptFilter.kind === "mine") return "Atribuídas a mim";
+                      if (deptFilter.kind === "unassigned") return "Não atribuídas";
+                      const dept = departments.find(
+                        (d) => d.id === deptFilter.departmentId,
+                      );
+                      return dept?.name ?? "Departamento";
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="mine">Atribuídas a mim</SelectItem>
+                  <SelectItem value="unassigned">Não atribuídas</SelectItem>
+                  {departments.length > 0 && (
+                    <>
+                      <SelectSeparator />
+                      {departments.map((d) => (
+                        <SelectItem key={d.id} value={`dept:${d.id}`}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <ConversationList
             activeConversationId={activeConversation?.id ?? null}
             onSelect={handleSelectConversation}
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            filterDepartmentId={filterDepartmentId}
+            filterAssignedAgentId={filterAssignedAgentId}
+            filterUnassigned={filterUnassigned}
           />
         </div>
 
@@ -615,7 +738,7 @@ export default function InboxPage() {
             toggle — which is itself desktop-only — never affects it. */}
         {contactPanelOpen && (
           <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
+            <ContactSidebar contact={activeContact} conversation={activeConversation} />
           </div>
         )}
       </div>

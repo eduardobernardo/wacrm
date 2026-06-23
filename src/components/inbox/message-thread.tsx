@@ -26,6 +26,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  ArrowRightLeft,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ import {
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
+import { TransferDialog } from "./transfer-dialog";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 
@@ -165,11 +167,12 @@ export function MessageThread({
   contactPanelOpen,
   onToggleContactPanel,
 }: MessageThreadProps) {
-  const { user } = useAuth();
+  const { user, canSendMessages } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   // Purely visual spin state for the manual-refresh button. The actual
@@ -839,7 +842,14 @@ export function MessageThread({
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+            <div className="flex items-center gap-2">
+              <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+              {conversation.department?.name && (
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {conversation.department.name}
+                </span>
+              )}
+            </div>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}
@@ -853,6 +863,28 @@ export function MessageThread({
             <Clock className="h-3 w-3" />
             {sessionInfo.remaining}
           </Badge>
+          {/* Assignee avatar + name in header */}
+          {currentAssignee && (
+            <div
+              className="ml-1 hidden items-center gap-1 sm:inline-flex sm:ml-2"
+              title={currentAssignee.full_name}
+            >
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-medium text-muted-foreground">
+                {currentAssignee.avatar_url ? (
+                  <img
+                    src={currentAssignee.avatar_url}
+                    alt={currentAssignee.full_name}
+                    className="h-5 w-5 rounded-full object-cover"
+                  />
+                ) : (
+                  currentAssignee.full_name.charAt(0).toUpperCase()
+                )}
+              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {currentAssignee.full_name}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -902,6 +934,20 @@ export function MessageThread({
               <RefreshCw
                 className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
               />
+            </button>
+          )}
+
+          {/* Transfer button — agent+ only */}
+          {canSendMessages && (
+            <button
+              type="button"
+              onClick={() => setTransferDialogOpen(true)}
+              aria-label="Transfer conversation"
+              title="Transferir"
+              className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Transferir</span>
             </button>
           )}
 
@@ -1085,6 +1131,13 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <TransferDialog
+        open={transferDialogOpen}
+        onOpenChange={setTransferDialogOpen}
+        conversationId={conversation.id}
+        onTransferred={onRefresh}
       />
     </div>
   );

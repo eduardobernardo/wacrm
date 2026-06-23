@@ -76,6 +76,26 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
           message: 'agent is required when mode is "specific"',
         })
       }
+      if (c.mode === 'department' && !nonEmpty(c.department_id)) {
+        issues.push({
+          path: `${path}.department_id`,
+          message: 'department is required when mode is "department"',
+        })
+      }
+      if (c.mode === 'department_user') {
+        if (!nonEmpty(c.department_id)) {
+          issues.push({
+            path: `${path}.department_id`,
+            message: 'department is required when mode is "department_user"',
+          })
+        }
+        if (!nonEmpty(c.user_id)) {
+          issues.push({
+            path: `${path}.user_id`,
+            message: 'user is required when mode is "department_user"',
+          })
+        }
+      }
       break
     case 'update_contact_field':
       if (!nonEmpty(c.field)) {

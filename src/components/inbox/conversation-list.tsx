@@ -28,6 +28,13 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  /**
+   * Optional pre-filter from the parent. When set, the supabase query
+   * is narrowed by the corresponding column before fetching.
+   */
+  filterDepartmentId?: string | null;
+  filterAssignedAgentId?: string | null;
+  filterUnassigned?: boolean;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,6 +59,9 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  filterDepartmentId,
+  filterAssignedAgentId,
+  filterUnassigned,
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
@@ -79,10 +89,21 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("conversations")
-        .select("*, contact:contacts(*)")
+        .select("*, contact:contacts(*), department:departments(id, name)")
         .order("last_message_at", { ascending: false });
+
+      // Apply parent-level filters (admin department/assignee filter)
+      if (filterDepartmentId) {
+        query = query.eq("department_id", filterDepartmentId);
+      } else if (filterUnassigned) {
+        query = query.is("assigned_agent_id", null);
+      } else if (filterAssignedAgentId) {
+        query = query.eq("assigned_agent_id", filterAssignedAgentId);
+      }
+
+      const { data, error } = await query;
 
       if (cancelled) return;
 
@@ -98,7 +119,44 @@ export function ConversationList({
         return;
       }
 
-      onConversationsLoadedRef.current(data ?? []);
+      const convs = (data ?? []) as Conversation[];
+
+      // Fetch assignee profiles for conversations that have an assigned_agent_id.
+      // assigned_agent_id → auth.users.id, but profiles.user_id → auth.users.id,
+      // so we can't do a direct supabase join. Fetch profiles in a second query.
+      const agentIds = [
+        ...new Set(
+          convs
+            .map((c) => c.assigned_agent_id)
+            .filter((id): id is string => !!id)
+        ),
+      ];
+
+      if (agentIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("user_id, full_name, avatar_url")
+          .in("user_id", agentIds);
+
+        if (cancelled) return;
+
+        const profileMap = new Map(
+          (profiles ?? []).map((p) => [p.user_id, p])
+        );
+        for (const conv of convs) {
+          if (conv.assigned_agent_id) {
+            const p = profileMap.get(conv.assigned_agent_id);
+            if (p) {
+              conv.assignee = {
+                full_name: p.full_name,
+                avatar_url: p.avatar_url ?? undefined,
+              };
+            }
+          }
+        }
+      }
+
+      onConversationsLoadedRef.current(convs);
       setLoading(false);
     })();
 
@@ -108,7 +166,8 @@ export function ConversationList({
     // `resyncToken` is included so the parent can force a refetch when
     // the realtime channel reconnects or the tab regains focus — catches
     // up on any events sent while the WS was disconnected or throttled.
-  }, [resyncToken]);
+    // Filter deps are included so changing the filter triggers a refetch.
+  }, [resyncToken, filterDepartmentId, filterAssignedAgentId, filterUnassigned]);
 
   const filtered = useMemo(() => {
     let result = conversations;
@@ -283,6 +342,29 @@ function ConversationItem({
             {conversation.last_message_text || "No messages yet"}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {/* Assignee avatar (tiny circle) */}
+            {conversation.assignee && (
+              <div
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-medium text-muted-foreground"
+                title={conversation.assignee.full_name}
+              >
+                {conversation.assignee.avatar_url ? (
+                  <img
+                    src={conversation.assignee.avatar_url}
+                    alt={conversation.assignee.full_name}
+                    className="h-5 w-5 rounded-full object-cover"
+                  />
+                ) : (
+                  conversation.assignee.full_name.charAt(0).toUpperCase()
+                )}
+              </div>
+            )}
+            {/* Department badge */}
+            {conversation.department?.name && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {conversation.department.name}
+              </span>
+            )}
             {conversation.unread_count > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                 {conversation.unread_count}

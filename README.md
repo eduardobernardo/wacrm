@@ -39,6 +39,11 @@ clone or fork it to run your own CRM.
   (owner / admin / agent / viewer), ownership transfer. Every install
   is account-scoped, so one shared inbox can be staffed by a whole
   team. Solo use stays single-user with zero setup.
+- **Departments** — segment your team into departments (support, sales,
+  etc.). Conversations are isolated per department via RLS; agents only
+  see what they're assigned to or what belongs to their department.
+  Transfer conversations manually in the inbox, route via automations
+  or flow handoff nodes, and direct broadcast replies to the right team.
 - **Account management** — email, password, avatar, global sign-out.
 
 ## Why fork this?

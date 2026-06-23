@@ -120,6 +120,17 @@ const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
   'failed',
 ];
 
+function formatReplyRouting(routing: Record<string, unknown>): string {
+  const kind = routing.kind as string;
+  if (kind === 'department') {
+    const strategy = routing.strategy === 'sequential' ? 'sequencial' : 'auto';
+    return `Departamento (${strategy})`;
+  }
+  if (kind === 'department_user') return 'Departamento + usuário';
+  if (kind === 'user') return 'Usuário específico';
+  return 'Personalizado';
+}
+
 /**
  * CSV export helper — RFC 4180 quoting. Quote every field so
  * commas/newlines/quotes round-trip cleanly.
@@ -299,6 +310,14 @@ export default function BroadcastDetailPage() {
               <span>
                 Created {new Date(broadcast.created_at).toLocaleDateString()}
               </span>
+              {broadcast.reply_routing && (
+                <>
+                  <span>-</span>
+                  <span>
+                    Reply routing: {formatReplyRouting(broadcast.reply_routing)}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>

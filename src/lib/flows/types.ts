@@ -101,10 +101,16 @@ export interface HandoffNodeConfig {
   /** Optional internal note written to flow_run_events.payload.note. */
   note?: string;
   /**
-   * Optional agent user_id to assign on the conversation when this
-   * node fires. Leave unset to flip the status without assignment.
+   * Legacy — treated as `{ kind: 'user', user_id: assign_to }` at runtime.
+   * Prefer `target` for new flows.
    */
   assign_to?: string;
+  /**
+   * Department-based routing target. When present, the engine delegates
+   * to `applyRouting` from `@/lib/departments/distribute` instead of
+   * writing `assigned_agent_id` directly.
+   */
+  target?: import("@/lib/departments/types").RouteTarget;
 }
 
 /**

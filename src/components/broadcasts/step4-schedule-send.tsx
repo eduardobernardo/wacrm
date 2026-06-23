@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
+import { ReplyRoutingSelector } from './reply-routing-selector';
 
 interface AudienceConfig {
   type: string;
@@ -27,6 +28,8 @@ interface Step4Props {
   onNameChange: (name: string) => void;
   template: MessageTemplate;
   audience: AudienceConfig;
+  replyRouting?: Record<string, unknown> | null;
+  onReplyRoutingChange: (value: Record<string, unknown> | null) => void;
   onSend: () => void;
   onSaveDraft?: () => void;
   onBack: () => void;
@@ -39,6 +42,8 @@ export function Step4ScheduleSend({
   onNameChange,
   template,
   audience,
+  replyRouting,
+  onReplyRoutingChange,
   onSend,
   onSaveDraft,
   onBack,
@@ -109,6 +114,12 @@ export function Step4ScheduleSend({
           className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
         />
       </div>
+
+      {/* Reply Routing */}
+      <ReplyRoutingSelector
+        value={replyRouting}
+        onChange={onReplyRoutingChange}
+      />
 
       {/* Summary Card */}
       <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">

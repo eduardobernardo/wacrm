@@ -701,10 +701,84 @@ function validateNode(
       break;
     }
 
-    case "handoff":
+    case "handoff": {
+      const cfg = node.config as {
+        assign_to?: string;
+        target?: {
+          kind?: string;
+          department_id?: string;
+          user_id?: string;
+          strategy?: string;
+        };
+      };
+      // Validate the `target` field when present. Department existence
+      // can't be checked without DB access — that is validated at
+      // runtime by distribute.ts.
+      if (cfg.target) {
+        const t = cfg.target;
+        if (t.kind === "department") {
+          if (!t.department_id?.trim()) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "target.department_id",
+              message: "Department routing needs a department_id.",
+            });
+          }
+          if (t.strategy && !["auto", "sequential"].includes(t.strategy)) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "target.strategy",
+              message: `Unknown routing strategy "${t.strategy}". Use "auto" or "sequential".`,
+            });
+          }
+        } else if (t.kind === "department_user") {
+          if (!t.department_id?.trim()) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "target.department_id",
+              message: "Department + user routing needs a department_id.",
+            });
+          }
+          if (!t.user_id?.trim()) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "target.user_id",
+              message: "Department + user routing needs a user_id.",
+            });
+          }
+        } else if (t.kind === "user") {
+          if (!t.user_id?.trim()) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "target.user_id",
+              message: "User routing needs a user_id.",
+            });
+          }
+        } else {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "target.kind",
+            message: `Unknown routing target kind "${t.kind}".`,
+          });
+        }
+      }
+      break;
+    }
+
     case "end":
-      // Terminal nodes have no outgoing edges; nothing to validate
-      // beyond their existence.
+      // Terminal node; nothing to validate beyond its existence.
       break;
 
     default:

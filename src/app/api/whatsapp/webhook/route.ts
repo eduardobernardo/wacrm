@@ -7,6 +7,8 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { applyRouting } from '@/lib/departments/distribute'
+import type { RouteTarget } from '@/lib/departments/types'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -386,7 +388,7 @@ async function handleStatusUpdate(status: {
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
-async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
+async function flagBroadcastReplyIfAny(accountId: string, contactId: string, conversationId: string) {
   try {
     // Most recent outbound broadcast in this account that hasn't
     // been replied to yet. Account-scoped so a shared inbox reply
@@ -394,7 +396,7 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
     // sent it.
     const { data: recs, error } = await supabaseAdmin()
       .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(account_id)')
+      .select('id, status, broadcast_id, broadcasts!inner(account_id, reply_routing)')
       .eq('contact_id', contactId)
       .eq('broadcasts.account_id', accountId)
       .in('status', ['sent', 'delivered', 'read'])
@@ -404,13 +406,34 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
     if (error || !recs || recs.length === 0) return
 
     const row = recs[0]
-    const { error: updErr } = await supabaseAdmin()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const broadcast = row.broadcasts as any
+    const replyRouting = broadcast?.reply_routing as RouteTarget | null
+
+    // Atomically flip to replied — the .in(status, …) filter ensures
+    // only one concurrent delivery wins the race.  The loser sees the
+    // row already as 'replied' and skips routing below.
+    const { data: updated, error: updErr } = await supabaseAdmin()
       .from('broadcast_recipients')
       .update({ status: 'replied', replied_at: new Date().toISOString() })
       .eq('id', row.id)
+      .in('status', ['sent', 'delivered', 'read'])
+      .select('id')
 
     if (updErr) {
       console.error('Error marking broadcast recipient replied:', updErr)
+    }
+
+    // Route the conversation on first reply only — the atomically-won
+    // status flip above is the idempotency lock.
+    if (replyRouting && updated && updated.length > 0) {
+      try {
+        await applyRouting(supabaseAdmin(), conversationId, accountId, replyRouting, {
+          source: 'broadcast',
+        })
+      } catch (routeErr) {
+        console.error('Broadcast reply routing failed:', routeErr)
+      }
     }
   } catch (err) {
     console.error('flagBroadcastReplyIfAny failed:', err)
@@ -634,7 +657,7 @@ async function processMessage(
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+  await flagBroadcastReplyIfAny(accountId, contactRecord.id, conversation.id)
 
   // ============================================================
   // Flow runner dispatch.

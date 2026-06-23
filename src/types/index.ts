@@ -67,6 +67,39 @@ export interface AccountMember {
   joined_at: string;
 }
 
+// ============================================================
+// Departments (026_departments.sql, 029_departments_color.sql)
+// ============================================================
+
+/**
+ * Visual identity for a department. Constrained to a fixed palette
+ * (see `lib/departments/colors.ts`) so the inbox and settings UI
+ * can render a swatch without runtime validation.
+ */
+export type DepartmentColor = 'slate' | 'amber' | 'teal' | 'rose' | 'violet';
+
+export interface Department {
+  id: string;
+  account_id: string;
+  name: string;
+  description?: string;
+  color?: DepartmentColor;
+  last_assigned_user_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DepartmentMember {
+  id: string;
+  account_id: string;
+  department_id: string;
+  user_id: string;
+  full_name?: string;
+  email?: string;
+  avatar_url?: string;
+  created_at: string;
+}
+
 /**
  * Outstanding invite link row. `token_hash` is intentionally
  * absent — it lives only in the DB and on the server. The
@@ -150,12 +183,15 @@ export interface Conversation {
   contact_id: string;
   status: ConversationStatus;
   assigned_agent_id?: string;
+  department_id?: string;
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  department?: { id: string; name: string } | null;
+  assignee?: { full_name: string; avatar_url?: string } | null;
 }
 
 export type SenderType = 'customer' | 'agent' | 'bot';
@@ -328,6 +364,7 @@ export interface Broadcast {
   template_language: string;
   template_variables?: Record<string, unknown>;
   audience_filter?: Record<string, unknown>;
+  reply_routing?: Record<string, unknown> | null;
   scheduled_at?: string;
   status: BroadcastStatus;
   total_recipients: number;
@@ -430,8 +467,11 @@ export interface TagStepConfig {
 }
 
 export interface AssignConversationStepConfig {
-  mode: 'specific' | 'round_robin';
-  agent_id?: string;
+  mode: 'specific' | 'round_robin' | 'department' | 'department_user';
+  agent_id?: string;        // legacy — used by 'specific' mode
+  department_id?: string;   // new — used by 'department' and 'department_user'
+  strategy?: 'auto' | 'sequential';  // new — used by 'department' mode
+  user_id?: string;         // new — used by 'department_user' mode
 }
 
 export interface UpdateContactFieldStepConfig {

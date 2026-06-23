@@ -190,11 +190,9 @@ export function NodeConfigForm({
 
     case "handoff":
       return (
-        <TextRow
-          label="Internal note (for the agent picking up)"
-          value={(cfg as { note?: string }).note ?? ""}
-          onChange={(v) => onUpdateConfig({ note: v })}
-          rows={2}
+        <HandoffForm
+          cfg={cfg as HandoffCfg}
+          onUpdateConfig={onUpdateConfig}
         />
       );
 
@@ -817,6 +815,317 @@ function SetTagForm({
         currentKey={currentKey}
         onChange={(v) => onUpdateConfig({ next_node_key: v })}
         label="Then advance to"
+      />
+    </>
+  );
+}
+
+// ============================================================
+// handoff — department-based routing
+// ============================================================
+
+interface HandoffCfg {
+  note?: string;
+  assign_to?: string;
+  target?: {
+    kind?: string;
+    department_id?: string;
+    user_id?: string;
+    strategy?: string;
+  };
+}
+
+/** Routing mode inferred from the saved config. */
+type RoutingMode = "user" | "dept_auto" | "dept_sequential" | "dept_user";
+
+function resolveRoutingMode(cfg: HandoffCfg): RoutingMode {
+  const t = cfg.target;
+  if (!t) return "user";
+  if (t.kind === "department") {
+    return t.strategy === "sequential" ? "dept_sequential" : "dept_auto";
+  }
+  if (t.kind === "department_user") return "dept_user";
+  return "user";
+}
+
+interface Department {
+  id: string;
+  name: string;
+}
+
+function HandoffForm({
+  cfg,
+  onUpdateConfig,
+}: {
+  cfg: HandoffCfg;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+}) {
+  const mode = resolveRoutingMode(cfg);
+
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [deptMembers, setDeptMembers] = useState<
+    Array<{ user_id: string; display_name?: string }>
+  >([]);
+
+  // Load departments once.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/departments").catch(() => null);
+        if (!res || !res.ok) return;
+        const json = (await res.json()) as { departments?: Department[] };
+        if (!cancelled) setDepartments(json.departments ?? []);
+      } catch {
+        // Endpoint absent — user can still type raw IDs.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load members when a department is selected in dept_user mode.
+  const deptId = cfg.target?.department_id;
+  useEffect(() => {
+    if (mode !== "dept_user" || !deptId) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/departments/${deptId}/members`).catch(
+          () => null,
+        );
+        if (!res || !res.ok) return;
+        const json = (await res.json()) as {
+          members?: Array<{ user_id: string; display_name?: string }>;
+        };
+        if (!cancelled) setDeptMembers(json.members ?? []);
+      } catch {
+        // Endpoint absent — user can still type raw user_id.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, deptId]);
+
+  const setMode = (m: RoutingMode) => {
+    if (m === "user") {
+      // Clear department members when switching away from dept_user.
+      setDeptMembers([]);
+      // Clear target; keep assign_to for backward compat.
+      onUpdateConfig({ target: undefined });
+    } else if (m === "dept_auto") {
+      setDeptMembers([]);
+      onUpdateConfig({
+        target: { kind: "department", department_id: "", strategy: "auto" },
+        assign_to: undefined,
+      });
+    } else if (m === "dept_sequential") {
+      setDeptMembers([]);
+      onUpdateConfig({
+        target: {
+          kind: "department",
+          department_id: "",
+          strategy: "sequential",
+        },
+        assign_to: undefined,
+      });
+    } else {
+      // dept_user
+      onUpdateConfig({
+        target: { kind: "department_user", department_id: "", user_id: "" },
+        assign_to: undefined,
+      });
+    }
+  };
+
+  return (
+    <>
+      {/* Routing mode selector */}
+      <div>
+        <label className="mb-1 block text-xs text-muted-foreground">
+          Routing type
+        </label>
+        <Select value={mode} onValueChange={(v) => setMode(v as RoutingMode)}>
+          <SelectTrigger className="bg-muted">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="user">Usuário específico</SelectItem>
+            <SelectItem value="dept_auto">Departamento (auto)</SelectItem>
+            <SelectItem value="dept_sequential">
+              Departamento (sequencial)
+            </SelectItem>
+            <SelectItem value="dept_user">
+              Departamento + usuário específico
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* User selector — legacy direct assignment */}
+      {mode === "user" && (
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">
+            Assign to user_id (optional)
+          </label>
+          <Input
+            value={cfg.assign_to ?? ""}
+            onChange={(e) => onUpdateConfig({ assign_to: e.target.value })}
+            placeholder="User UUID"
+            className="bg-muted font-mono text-xs"
+          />
+        </div>
+      )}
+
+      {/* Department selector — auto / sequential */}
+      {(mode === "dept_auto" || mode === "dept_sequential") && (
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">
+            Department
+          </label>
+          {departments.length > 0 ? (
+            <Select
+              value={cfg.target?.department_id ?? ""}
+              onValueChange={(v) =>
+                onUpdateConfig({
+                  target: { ...cfg.target, department_id: v },
+                })
+              }
+            >
+              <SelectTrigger className="bg-muted">
+                {/* Resolve the label explicitly so the trigger never
+                    shows the raw UUID when the list hasn't hydrated. */}
+                <SelectValue placeholder="Pick a department…">
+                  {departments.find(
+                    (d) => d.id === cfg.target?.department_id,
+                  )?.name ?? ''}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {departments.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={cfg.target?.department_id ?? ""}
+              onChange={(e) =>
+                onUpdateConfig({
+                  target: { ...cfg.target, department_id: e.target.value },
+                })
+              }
+              placeholder="Department UUID"
+              className="bg-muted font-mono text-xs"
+            />
+          )}
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {mode === "dept_auto"
+              ? "Auto assigns to the member with the fewest open conversations."
+              : "Sequential round-robin — cycles through members in order."}
+          </p>
+        </div>
+      )}
+
+      {/* Department + user selector */}
+      {mode === "dept_user" && (
+        <>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              Department
+            </label>
+            {departments.length > 0 ? (
+              <Select
+                value={cfg.target?.department_id ?? ""}
+                onValueChange={(v) =>
+                  onUpdateConfig({
+                    target: {
+                      ...cfg.target,
+                      department_id: v,
+                      user_id: "",
+                    },
+                  })
+                }
+              >
+                <SelectTrigger className="bg-muted">
+                  <SelectValue placeholder="Pick a department…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={cfg.target?.department_id ?? ""}
+                onChange={(e) =>
+                  onUpdateConfig({
+                    target: {
+                      ...cfg.target,
+                      department_id: e.target.value,
+                    },
+                  })
+                }
+                placeholder="Department UUID"
+                className="bg-muted font-mono text-xs"
+              />
+            )}
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              Team member
+            </label>
+            {deptMembers.length > 0 ? (
+              <Select
+                value={cfg.target?.user_id ?? ""}
+                onValueChange={(v) =>
+                  onUpdateConfig({
+                    target: { ...cfg.target, user_id: v },
+                  })
+                }
+              >
+                <SelectTrigger className="bg-muted">
+                  <SelectValue placeholder="Pick a member…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {deptMembers.map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {m.display_name ?? m.user_id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={cfg.target?.user_id ?? ""}
+                onChange={(e) =>
+                  onUpdateConfig({
+                    target: { ...cfg.target, user_id: e.target.value },
+                  })
+                }
+                placeholder="User UUID"
+                className="bg-muted font-mono text-xs"
+              />
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Internal note — always shown */}
+      <TextRow
+        label="Internal note (for the agent picking up)"
+        value={cfg.note ?? ""}
+        onChange={(v) => onUpdateConfig({ note: v })}
+        rows={2}
       />
     </>
   );
