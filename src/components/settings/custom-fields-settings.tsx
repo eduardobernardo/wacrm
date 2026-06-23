@@ -32,7 +32,7 @@ export function CustomFieldsSettings() {
         </CardTitle>
         <CardDescription className="text-muted-foreground">
           Campos extras para contatos (ex: CEP, origem do lead). Aparecem
-          em todos os contatos e na ação de automação "Atualizar campo de contato".
+          em todos os contatos e na ação de automação &quot;Atualizar campo de contato&quot;.
         </CardDescription>
       </CardHeader>
       <CardContent>

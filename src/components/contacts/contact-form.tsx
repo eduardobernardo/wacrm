@@ -142,7 +142,7 @@ export function ContactForm({
       } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) throw new Error('Not authenticated');
-      if (!accountId) throw new Error('Your profile is not linked to an account.');
+      if (!accountId) throw new Error('Seu perfil não está vinculado a uma conta.');
 
       let contactId = contact?.id;
 
@@ -238,20 +238,20 @@ export function ContactForm({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="cf-name" className="text-muted-foreground">
-              Name
+              Nome
             </Label>
             <Input
               id="cf-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="John Doe"
+              placeholder="João Silva"
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="cf-phone" className="text-muted-foreground">
-              Phone <span className="text-red-400">*</span>
+              Telefone <span className="text-red-400">*</span>
             </Label>
             <Input
               id="cf-phone"
@@ -299,27 +299,27 @@ export function ContactForm({
 
           <div className="space-y-2">
             <Label htmlFor="cf-email" className="text-muted-foreground">
-              Email
+              E-mail
             </Label>
             <Input
               id="cf-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="john@example.com"
+              placeholder="joao@exemplo.com"
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="cf-company" className="text-muted-foreground">
-              Company
+              Empresa
             </Label>
             <Input
               id="cf-company"
               value={company}
               onChange={(e) => setCompany(e.target.value)}
-              placeholder="Acme Inc."
+              placeholder="Empresa Ltda."
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
           </div>
