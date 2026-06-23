@@ -18,16 +18,9 @@ import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { getSubscription } from "@/lib/billing/subscription";
-import { getStripe, getStripePriceId } from "@/lib/billing/stripe";
+import { baseUrl, getStripe, getStripePriceId } from "@/lib/billing/stripe";
 import { isPaidTier, type PlanTier } from "@/lib/billing/plans";
 import { billingAdmin } from "@/lib/billing/admin-client";
-
-function baseUrl(request: Request): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") ||
-    new URL(request.url).origin
-  );
-}
 
 export async function POST(request: Request) {
   try {

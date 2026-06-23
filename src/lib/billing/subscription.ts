@@ -33,6 +33,7 @@ import {
   type PlanLimits,
   type PlanTier,
   type SubInfo,
+  type SubscriptionStatus,
 } from "./plans";
 
 export { effectiveTier, effectiveMaxMembers, ENTITLED_STATUSES } from "./plans";
@@ -41,7 +42,7 @@ export type { SubInfo } from "./plans";
 export interface Subscription {
   accountId: string;
   plan: PlanTier;
-  status: string;
+  status: SubscriptionStatus;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   currentPeriodEnd: string | null;
@@ -89,7 +90,7 @@ export async function getSubscription(
   return {
     accountId: data.account_id,
     plan: data.plan,
-    status: data.status,
+    status: data.status as SubscriptionStatus, // DB column is subscription_status_enum
     stripeCustomerId: data.stripe_customer_id,
     stripeSubscriptionId: data.stripe_subscription_id,
     currentPeriodEnd: data.current_period_end,

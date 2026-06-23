@@ -16,14 +16,7 @@ import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { getSubscription } from "@/lib/billing/subscription";
-import { getStripe } from "@/lib/billing/stripe";
-
-function baseUrl(request: Request): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") ||
-    new URL(request.url).origin
-  );
-}
+import { baseUrl, getStripe } from "@/lib/billing/stripe";
 
 export async function POST(request: Request) {
   try {

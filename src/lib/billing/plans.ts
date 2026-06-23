@@ -22,6 +22,15 @@
 
 export type PlanTier = "free" | "pro" | "business";
 
+/** Subscription lifecycle status — mirrors the `subscription_status_enum`
+ *  Postgres type from migration 030_billing.sql. */
+export type SubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "incomplete";
+
 /** Ordered list, cheapest first. */
 export const PLAN_TIERS: readonly PlanTier[] = ["free", "pro", "business"] as const;
 
@@ -124,7 +133,7 @@ export function formatLimit(value: number): string {
 // ============================================================
 
 /** Subscription statuses that keep plan entitlements active. */
-export const ENTITLED_STATUSES: ReadonlySet<string> = new Set([
+export const ENTITLED_STATUSES: ReadonlySet<SubscriptionStatus> = new Set([
   "trialing",
   "active",
   "past_due",
@@ -133,7 +142,7 @@ export const ENTITLED_STATUSES: ReadonlySet<string> = new Set([
 /** Minimal subscription info needed for pure entitlement calculations. */
 export interface SubInfo {
   plan: PlanTier;
-  status: string;
+  status: SubscriptionStatus;
   extraSeats: number;
 }
 

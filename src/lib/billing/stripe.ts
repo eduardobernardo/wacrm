@@ -56,3 +56,12 @@ export function tierFromPriceId(priceId: string | null | undefined): PlanTier | 
   }
   return null;
 }
+
+/** Base URL for redirect/success URLs — env override (trailing slashes
+ *  trimmed) or the request's own origin. Shared by checkout + portal. */
+export function baseUrl(request: Request): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") ||
+    new URL(request.url).origin
+  );
+}
