@@ -22,7 +22,7 @@ import { Check, Loader2, Sparkles } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { PLANS, PLAN_TIERS, formatLimit, type PlanTier } from "@/lib/billing/plans";
+import { PLANS, PLAN_TIERS, ENTITLED_STATUSES, effectiveTier, formatLimit, type PlanTier } from "@/lib/billing/plans";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,8 +32,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { SettingsPanelHead } from "./settings-panel-head";
-
-const ENTITLED = new Set(["trialing", "active", "past_due"]);
 
 interface SubRow {
   plan: PlanTier;
@@ -163,11 +161,10 @@ export function BillingPanel() {
     );
   }
 
-  const entitled = ENTITLED.has(sub.status);
-  const activeTier: PlanTier = entitled ? sub.plan : "free";
+  const entitled = ENTITLED_STATUSES.has(sub.status);
+  const activeTier: PlanTier = effectiveTier({ plan: sub.plan, status: sub.status, extraSeats: sub.extra_seats });
   const limits = PLANS[activeTier].limits;
-  const seatLimit =
-    activeTier === "free" ? limits.maxMembers : limits.maxMembers + sub.extra_seats;
+  const seatLimit = activeTier === "free" ? limits.maxMembers : limits.maxMembers + sub.extra_seats;
   const hasCustomer = Boolean(sub.stripe_customer_id);
 
   const rows: { label: string; used: number; limit: number }[] = [

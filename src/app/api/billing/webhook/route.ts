@@ -89,8 +89,9 @@ async function resolveAccountId(sub: Stripe.Subscription): Promise<string | null
 async function syncSubscription(sub: Stripe.Subscription): Promise<void> {
   const accountId = await resolveAccountId(sub);
   if (!accountId) {
-    console.error("[billing/webhook] could not resolve account for sub", sub.id);
-    return;
+    throw new Error(
+      `[billing/webhook] could not resolve account for subscription ${sub.id}`,
+    );
   }
 
   const priceId = sub.items.data[0]?.price?.id;

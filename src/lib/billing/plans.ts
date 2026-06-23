@@ -118,3 +118,36 @@ export function isUnlimited(value: number): boolean {
 export function formatLimit(value: number): string {
   return isUnlimited(value) ? "Ilimitado" : String(value);
 }
+
+// ============================================================
+// Entitlement helpers — pure functions, safe for client & server.
+// ============================================================
+
+/** Subscription statuses that keep plan entitlements active. */
+export const ENTITLED_STATUSES: ReadonlySet<string> = new Set([
+  "trialing",
+  "active",
+  "past_due",
+]);
+
+/** Minimal subscription info needed for pure entitlement calculations. */
+export interface SubInfo {
+  plan: PlanTier;
+  status: string;
+  extraSeats: number;
+}
+
+/** The tier whose entitlements currently apply. A canceled/incomplete
+ *  subscription falls back to 'free'. */
+export function effectiveTier(sub: SubInfo): PlanTier {
+  return ENTITLED_STATUSES.has(sub.status) ? sub.plan : "free";
+}
+
+/** Effective seat allowance = plan base + purchased extra seats.
+ *  Returns the unlimited sentinel when the base cap is UNLIMITED. */
+export function effectiveMaxMembers(sub: SubInfo): number {
+  const tier = effectiveTier(sub);
+  const base = getPlanLimits(tier).maxMembers;
+  if (isUnlimited(base)) return base;
+  return tier === "free" ? base : base + sub.extraSeats;
+}

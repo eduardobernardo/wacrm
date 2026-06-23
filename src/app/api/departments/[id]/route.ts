@@ -39,7 +39,8 @@ export async function GET(
     const { count, error: countErr } = await ctx.supabase
       .from("department_members")
       .select("id", { count: "exact", head: true })
-      .eq("department_id", id);
+      .eq("department_id", id)
+      .eq("account_id", ctx.accountId);
 
     if (countErr) {
       console.error("[GET /api/departments/[id]] member count error:", countErr);

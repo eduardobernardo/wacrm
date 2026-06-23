@@ -70,6 +70,8 @@ CREATE INDEX IF NOT EXISTS idx_department_members_account
 CREATE INDEX IF NOT EXISTS idx_department_members_user
   ON department_members(user_id);
 
+ALTER TABLE department_members ENABLE ROW LEVEL SECURITY;
+
 -- NB: UNIQUE(department_id, user_id) already provides a leading-column
 -- index on department_id — a separate idx_department_members_department
 -- is redundant and intentionally omitted.
@@ -162,3 +164,12 @@ $$;
 ALTER FUNCTION is_department_member(UUID) OWNER TO postgres;
 REVOKE ALL ON FUNCTION is_department_member(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION is_department_member(UUID) TO authenticated, service_role;
+
+-- ============================================================
+-- Cleanup: remove any cross-account department_members rows
+-- that may exist from before RLS was enabled on this table.
+-- ============================================================
+DELETE FROM department_members dm
+USING departments d
+WHERE dm.department_id = d.id
+  AND dm.account_id != d.account_id;

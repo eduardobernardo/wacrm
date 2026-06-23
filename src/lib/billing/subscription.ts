@@ -21,14 +21,22 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { ForbiddenError } from "@/lib/auth/account";
+import { ForbiddenError, toErrorResponse } from "@/lib/auth/account";
+import { NextResponse } from "next/server";
 import {
   PLANS,
+  ENTITLED_STATUSES,
+  effectiveTier,
+  effectiveMaxMembers,
   getPlanLimits,
   isUnlimited,
   type PlanLimits,
   type PlanTier,
+  type SubInfo,
 } from "./plans";
+
+export { effectiveTier, effectiveMaxMembers, ENTITLED_STATUSES } from "./plans";
+export type { SubInfo } from "./plans";
 
 export interface Subscription {
   accountId: string;
@@ -41,11 +49,6 @@ export interface Subscription {
   trialEndsAt: string | null;
   extraSeats: number;
 }
-
-/** A subscription is "active" (entitled to its plan) while Stripe
- *  reports trialing/active. past_due keeps access during the grace
- *  window; canceled/incomplete fall back to free entitlements. */
-const ENTITLED_STATUSES = new Set(["trialing", "active", "past_due"]);
 
 /**
  * Read an account's subscription. Falls back to a synthetic `free`
@@ -94,27 +97,6 @@ export async function getSubscription(
     trialEndsAt: data.trial_ends_at,
     extraSeats: data.extra_seats ?? 0,
   };
-}
-
-/**
- * The tier whose entitlements currently apply. A `pro` row whose
- * Stripe status is `canceled` is treated as `free` — we never grant
- * paid features on a dead subscription.
- */
-export function effectiveTier(sub: Subscription): PlanTier {
-  return ENTITLED_STATUSES.has(sub.status) ? sub.plan : "free";
-}
-
-/**
- * Effective seat allowance = plan base + purchased extra seats.
- * Extra seats only count while the subscription is entitled (a
- * canceled account drops to the free base).
- */
-export function effectiveMaxMembers(sub: Subscription): number {
-  const base = getPlanLimits(effectiveTier(sub)).maxMembers;
-  if (isUnlimited(base)) return base;
-  const tier = effectiveTier(sub);
-  return tier === "free" ? base : base + sub.extraSeats;
 }
 
 // ------------------------------------------------------------
@@ -240,14 +222,10 @@ export async function assertCanConnectWhatsapp(
   supabase: SupabaseClient,
   accountId: string,
 ): Promise<void> {
+  await assertWhatsappEntitled(supabase, accountId);
+
   const sub = await getSubscription(supabase, accountId);
   const max = getPlanLimits(effectiveTier(sub)).maxWhatsappNumbers;
-
-  if (max <= 0) {
-    throw new ForbiddenError(
-      "Conectar o WhatsApp requer um plano Pro ou Business. Faça upgrade em Configurações → Plano e cobrança.",
-    );
-  }
 
   if (isUnlimited(max)) return;
 
@@ -272,4 +250,36 @@ export async function assertCanConnectWhatsapp(
 function upgradeMessage(plan: PlanTier, noun: string): string {
   const planName = PLANS[plan].name;
   return `Seu plano ${planName} atingiu o limite de ${noun}. Faça upgrade em Configurações → Plano e cobrança para continuar.`;
+}
+
+/**
+ * Convenience: call `assertWithinLimit`, catching ForbiddenError and
+ * returning a 403 response. Returns `null` when within limits — the
+ * caller proceeds. Eliminates the need for try/catch + instanceof
+ * ForbiddenError boilerplate at every inline route call site.
+ */
+export async function enforceLimit(
+  supabase: SupabaseClient,
+  accountId: string,
+  resource: LimitResource,
+): Promise<NextResponse | null> {
+  try {
+    await assertWithinLimit(supabase, accountId, resource);
+    return null;
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
+
+/** Same pattern for the WhatsApp entitlement gate. */
+export async function enforceWhatsappEntitled(
+  supabase: SupabaseClient,
+  accountId: string,
+): Promise<NextResponse | null> {
+  try {
+    await assertWhatsappEntitled(supabase, accountId);
+    return null;
+  } catch (err) {
+    return toErrorResponse(err);
+  }
 }

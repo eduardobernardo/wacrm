@@ -7,8 +7,7 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
-import { ForbiddenError } from '@/lib/auth/account'
-import { assertWhatsappEntitled } from '@/lib/billing/subscription'
+import { enforceWhatsappEntitled } from '@/lib/billing/subscription'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -191,14 +190,8 @@ export async function POST(request: Request) {
     // the SaaS. Entitlement-only, so reconnecting/updating an existing
     // number stays allowed; the one-number-per-account rule is the DB
     // UNIQUE(account_id) constraint. Checked before any Meta API call.
-    try {
-      await assertWhatsappEntitled(supabase, accountId)
-    } catch (err) {
-      if (err instanceof ForbiddenError) {
-        return NextResponse.json({ error: err.message }, { status: err.status })
-      }
-      throw err
-    }
+    const gated = await enforceWhatsappEntitled(supabase, accountId)
+    if (gated) return gated
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body

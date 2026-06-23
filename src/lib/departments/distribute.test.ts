@@ -12,6 +12,14 @@ interface MockCall {
 }
 
 /**
+ * Mark a value as a list of sequential responses for a single table.
+ * Each call to `.single()` or terminal `then` consumes the next item.
+ */
+function multi(...responses: unknown[]) {
+  return { _multi: responses };
+}
+
+/**
  * Build a chainable mock that records every call and resolves with
  * controlled responses keyed by table name.
  */
@@ -25,6 +33,22 @@ function createMockDb(
   // return the pre-configured response for the *last* `.from()` table.
 
   let currentTable = '';
+  const callCount: Record<string, number> = {};
+
+  function getResponse(table: string): unknown {
+    const resp = responses[table];
+    if (
+      resp &&
+      typeof resp === 'object' &&
+      '_multi' in (resp as Record<string, unknown>)
+    ) {
+      const arr = (resp as { _multi: unknown[] })._multi;
+      const idx = callCount[table] ?? 0;
+      callCount[table] = idx + 1;
+      return arr[idx] ?? null;
+    }
+    return resp;
+  }
 
   function chain(): Record<string, unknown> {
     const c: Record<string, unknown> = {};
@@ -55,7 +79,7 @@ function createMockDb(
       return chain();
     };
     c.single = () => {
-      const resp = responses[currentTable];
+      const resp = getResponse(currentTable);
       if (resp && typeof resp === 'object' && 'error' in (resp as Record<string, unknown>)) {
         return Promise.resolve(resp);
       }
@@ -67,7 +91,7 @@ function createMockDb(
       onFulfilled: (v: unknown) => unknown,
       onRejected?: (e: unknown) => unknown,
     ) => {
-      const resp = responses[currentTable];
+      const resp = getResponse(currentTable);
       const resolved =
         resp && typeof resp === 'object' && 'error' in (resp as Record<string, unknown>)
           ? resp
@@ -111,7 +135,10 @@ describe('resolveAssignment', () => {
   });
 
   it('kind: user → returns userId, null departmentId', async () => {
-    const db = createMockDb({}, calls);
+    const db = createMockDb(
+      { profiles: { user_id: USER_A } },
+      calls,
+    );
     const { resolveAssignment } = await import('./distribute');
 
     const target: RouteTarget = { kind: 'user', user_id: USER_A };
@@ -122,7 +149,10 @@ describe('resolveAssignment', () => {
 
   it('kind: department_user with valid member → returns user + dept', async () => {
     const db = createMockDb(
-      { department_members: { user_id: USER_A } },
+      {
+        departments: { id: DEPT },
+        department_members: { user_id: USER_A },
+      },
       calls,
     );
     const { resolveAssignment } = await import('./distribute');
@@ -140,6 +170,7 @@ describe('resolveAssignment', () => {
   it('kind: department_user with invalid member → throws', async () => {
     const db = createMockDb(
       {
+        departments: { id: DEPT },
         department_members: {
           data: null,
           error: { message: 'Row not found', code: 'PGRST116' },
@@ -163,10 +194,12 @@ describe('resolveAssignment', () => {
   it('kind: department + auto → picks member with fewest open/pending conversations', async () => {
     // Members: A, B, C.  A has 3 open/pending, B has 1, C has 2.
     // Responses keyed by table name in call order:
-    //   1. department_members → member list
-    //   2. conversations → all open/pending assigned to any member
+    //   1. departments → ownership check
+    //   2. department_members → member list
+    //   3. conversations → all open/pending assigned to any member
     const db = createMockDb(
       {
+        departments: { id: DEPT },
         department_members: [
           { user_id: USER_A },
           { user_id: USER_B },
@@ -198,6 +231,7 @@ describe('resolveAssignment', () => {
   it('kind: department + auto with equal counts → picks first member (stable)', async () => {
     const db = createMockDb(
       {
+        departments: { id: DEPT },
         department_members: [
           { user_id: USER_A },
           { user_id: USER_B },
@@ -225,6 +259,7 @@ describe('resolveAssignment', () => {
   it('kind: department + auto with no members → returns null userId', async () => {
     const db = createMockDb(
       {
+        departments: { id: DEPT },
         department_members: [],
         conversations: [],
       },
@@ -246,16 +281,22 @@ describe('resolveAssignment', () => {
     // Ordered members: A, B, C.  Cursor currently on A → next is B.
     const db = createMockDb(
       {
-        // First call: department_members (unfiltered for initial member check)
-        // Second call: department_members (ordered for sequential)
-        // Third call: departments (read cursor)
-        // Fourth call: departments (update cursor)
+        // Call order:
+        //   1. departments (ownership check)
+        //   2. department_members (unfiltered for initial member check)
+        //   3. department_members (ordered for sequential)
+        //   4. departments (read cursor)
+        //   5. departments (update cursor)
+        departments: multi(
+          { id: DEPT },
+          { last_assigned_user_id: USER_A },
+          null,
+        ),
         department_members: [
           { user_id: USER_A },
           { user_id: USER_B },
           { user_id: USER_C },
         ],
-        departments: { last_assigned_user_id: USER_A },
       },
       calls,
     );
@@ -275,12 +316,16 @@ describe('resolveAssignment', () => {
     // Ordered members: A, B, C.  Cursor currently on C → wraps to A.
     const db = createMockDb(
       {
+        departments: multi(
+          { id: DEPT },
+          { last_assigned_user_id: USER_C },
+          null,
+        ),
         department_members: [
           { user_id: USER_A },
           { user_id: USER_B },
           { user_id: USER_C },
         ],
-        departments: { last_assigned_user_id: USER_C },
       },
       calls,
     );
@@ -299,11 +344,15 @@ describe('resolveAssignment', () => {
   it('kind: department + sequential with null cursor → picks first member', async () => {
     const db = createMockDb(
       {
+        departments: multi(
+          { id: DEPT },
+          { last_assigned_user_id: null },
+          null,
+        ),
         department_members: [
           { user_id: USER_A },
           { user_id: USER_B },
         ],
-        departments: { last_assigned_user_id: null },
       },
       calls,
     );
@@ -331,6 +380,7 @@ describe('applyRouting', () => {
   it('updates conversation with correct dept + assignee + status', async () => {
     const db = createMockDb(
       {
+        departments: { id: DEPT },
         department_members: { user_id: USER_A },
         conversations: null,
       },
@@ -363,10 +413,11 @@ describe('applyRouting', () => {
   });
 
   it('inserts audit row with correct source + from/to when transferredBy set', async () => {
-    // Mock responses: department_members (for resolveAssignment),
+    // Mock responses: departments (ownership check), department_members (for resolveAssignment),
     // then conversations (for pre-fetch of current state), then insert.
     const db = createMockDb(
       {
+        departments: { id: DEPT },
         department_members: { user_id: USER_B },
         conversations: {
           assigned_agent_id: USER_A,
@@ -408,7 +459,7 @@ describe('applyRouting', () => {
   it('does not insert audit row when transferredBy is not set', async () => {
     const db = createMockDb(
       {
-        department_members: { user_id: USER_A },
+        profiles: { user_id: USER_A },
         conversations: null,
       },
       calls,

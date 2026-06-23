@@ -25,11 +25,33 @@ export async function resolveAssignment(
 ): Promise<{ userId: string | null; departmentId: string | null }> {
   // ---- kind: 'user' ----
   if (target.kind === 'user') {
+    const { data: profile, error: profileErr } = await db
+      .from('profiles')
+      .select('user_id')
+      .eq('user_id', target.user_id)
+      .eq('account_id', accountId)
+      .single();
+
+    if (profileErr || !profile) {
+      throw new Error(`User ${target.user_id} is not a member of account ${accountId}`);
+    }
     return { userId: target.user_id, departmentId: null };
   }
 
   // ---- kind: 'department_user' ----
   if (target.kind === 'department_user') {
+    // Verify the department belongs to this account
+    const { data: dept, error: deptErr } = await db
+      .from('departments')
+      .select('id')
+      .eq('id', target.department_id)
+      .eq('account_id', accountId)
+      .single();
+
+    if (deptErr || !dept) {
+      throw new Error(`Department ${target.department_id} not found in account ${accountId}`);
+    }
+
     const { data, error } = await db
       .from('department_members')
       .select('user_id')
@@ -46,6 +68,18 @@ export async function resolveAssignment(
   }
 
   // ---- kind: 'department' ----
+  // Verify the department belongs to this account
+  const { data: dept, error: deptErr } = await db
+    .from('departments')
+    .select('id')
+    .eq('id', target.department_id)
+    .eq('account_id', accountId)
+    .single();
+
+  if (deptErr || !dept) {
+    throw new Error(`Department ${target.department_id} not found in account ${accountId}`);
+  }
+
   // Fetch all members of the department
   const { data: members, error: membersErr } = await db
     .from('department_members')

@@ -37,7 +37,8 @@ export async function GET() {
       const { data: rows, error: countErr } = await ctx.supabase
         .from("department_members")
         .select("department_id")
-        .in("department_id", deptIds);
+        .in("department_id", deptIds)
+        .eq("account_id", ctx.accountId);
 
       if (!countErr && rows) {
         for (const row of rows) {

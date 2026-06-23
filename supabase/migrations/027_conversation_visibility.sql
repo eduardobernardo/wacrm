@@ -34,7 +34,7 @@ DROP POLICY IF EXISTS conversations_select ON conversations;
 CREATE POLICY conversations_select ON conversations FOR SELECT USING (
   is_account_member(account_id, 'admin')
   OR (assigned_agent_id = auth.uid() AND is_account_member(account_id))
-  OR (department_id IS NOT NULL AND is_department_member(department_id))
+  OR (department_id IS NOT NULL AND is_department_member(department_id) AND is_account_member(account_id))
 );
 
 -- ============================================================

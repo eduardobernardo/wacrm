@@ -26,6 +26,7 @@ export async function GET(
       .from("department_members")
       .select("id, user_id, created_at")
       .eq("department_id", departmentId)
+      .eq("account_id", ctx.accountId)
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -45,7 +46,8 @@ export async function GET(
     const { data: profiles, error: profileErr } = await ctx.supabase
       .from("profiles")
       .select("user_id, full_name, email, avatar_url")
-      .in("user_id", userIds);
+      .in("user_id", userIds)
+      .eq("account_id", ctx.accountId);
 
     if (profileErr) {
       console.error(
@@ -197,11 +199,27 @@ export async function DELETE(
       );
     }
 
+    // Verify the department belongs to the caller's account.
+    const { data: dept, error: deptErr } = await ctx.supabase
+      .from("departments")
+      .select("id")
+      .eq("id", departmentId)
+      .eq("account_id", ctx.accountId)
+      .single();
+
+    if (deptErr || !dept) {
+      return NextResponse.json(
+        { error: "Department not found" },
+        { status: 404 },
+      );
+    }
+
     const { error, count } = await ctx.supabase
       .from("department_members")
       .delete({ count: "exact" })
       .eq("department_id", departmentId)
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .eq("account_id", ctx.accountId);
 
     if (error) {
       console.error(

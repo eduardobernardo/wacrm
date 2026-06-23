@@ -7,8 +7,7 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
-import { ForbiddenError } from '@/lib/auth/account'
-import { assertWithinLimit } from '@/lib/billing/subscription'
+import { enforceLimit } from '@/lib/billing/subscription'
 
 export async function GET() {
   const supabase = await createClient()
@@ -49,14 +48,8 @@ export async function POST(request: Request) {
   }
 
   // Plan limit: number of automations per account.
-  try {
-    await assertWithinLimit(supabase, accountId, 'automations')
-  } catch (err) {
-    if (err instanceof ForbiddenError) {
-      return NextResponse.json({ error: err.message }, { status: err.status })
-    }
-    throw err
-  }
+  const limited = await enforceLimit(supabase, accountId, 'automations')
+  if (limited) return limited
 
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
