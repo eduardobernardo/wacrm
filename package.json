@@ -1,17 +1,17 @@
 {
-  "name": "wacrm",
+  "name": "idxcrm",
   "version": "0.2.2",
   "private": true,
-  "description": "Self-hostable CRM template for WhatsApp built on Next.js and Supabase — shared inbox, contacts, sales pipelines, broadcasts, and no-code automations.",
+  "description": "IDX CRM — CRM para WhatsApp com caixa de entrada compartilhada, pipelines, automações e disparos.",
   "license": "MIT",
-  "author": "Arnas Donauskas",
-  "homepage": "https://github.com/ArnasDon/wacrm",
+  "author": "idxcode",
+  "homepage": "",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ArnasDon/wacrm.git"
+    "url": ""
   },
   "bugs": {
-    "url": "https://github.com/ArnasDon/wacrm/issues"
+    "url": ""
   },
   "keywords": [
     "crm",
@@ -21,8 +21,8 @@
     "supabase",
     "automation",
     "broadcast",
-    "self-hosted",
-    "template"
+    "brazil",
+    "saas"
   ],
   "engines": {
     "node": ">=20.0.0"
